@@ -1,4 +1,26 @@
-# Plot Flow 1.2.0
+# Plot Flow 1.2.1
+
+## 1.2.1 built, installed and opened; publishing installer
+
+Installer completed successfully: 277765055 bytes, SHA256 c8960c7e32e0773280122c04e802e36373be7615ad65be989ce412fa9a82961d. Fresh isolated installation exit0 and focused model-checksum/native DLL-directory + System32-only loading passed. No redundant CPU/GPU/full-suite reruns after the user's request to expedite; native recognition implementation is unchanged.
+
+Canonical Desktop/Plot Flow updated via the ordinary Explorer installer broker to 1.2.1 and opened on Statistics. All 12 pre-update user files were backed up and SHA256-preserved before startup. Every daily statistics row and tracking-start metadata matches the latest consistent backup exactly after startup; integrity_check=ok. Installed executable matches the tested fresh installer payload. Native window confirms the actual compact cards, real single-day point, current counters and v1.2.1. User input detected during an optional tooltip click; do not interfere with the user's active inspection. Full tooltip behavior already has independent live source evidence. The same installer was copied to the Desktop installer folder with matching checksum. No personal counters, audio, databases or logs are included in publication; UI fixtures now use arbitrary synthetic numbers.
+
+Self-evaluation: accuracy 4/5 (verified original source, independent source geometry/hover, package and actual data preservation; partner hardware untested), completeness 4/5 (requested changes installed, publication pending; minor multi-year label issue documented below), clarity 4/5 (short status and direct installer link intended; necessary date/metric controls use compact labels), actionability 4/5 (app open and Desktop installer ready; remote link pending), conciseness 3/5 (long implementation/review cycles; stop redundant retesting and extra refinements now). Overall 3.8/5; main improvement is faster scoped handoff. User acceptance pending; do not claim bug-free universal compatibility.
+
+## 1.2.1 source correction verified; Windows installer compiling
+
+User requested faster handoff and no redundant retesting. Stop repeating the full test suite; remaining release work is packaging, preserving current data, updating/opening the app, a focused launch check and publication. Current 1.2.0 installation is still running; no update yet. Full Cargo test passed 306/306 after an initial resource-only OS1455 mmap failure. Frontend lint/build, 28 calendar/heatmap/metadata unit tests, bundled-model lifecycle and real React/Motion/Recharts UI scenarios passed. Existing Vite large-chunk and Rust warnings remain.
+
+Independent gan-evaluator approved the latest five source hashes at native 680/700px windows (490/500px content): both former P2 defects closed, original header 33.5px / line stage 148.875px preserved, ordinary 28/28 cell hovers and live refresh expose all three metrics honestly. Source-source comparisons and isolated fixture screenshots are local ignored files only. The expanded hover uses the author's already-existing DitherChartTooltipContent via a portal; original compact footer stays in flow. Unknown cells use the original muted fill, no invented outline. Real tracked inactive days are zeros, untracked/future dates are gaps; a single tracked current day is one dot. Known inherited wide-content hint overlap also exists in untouched source and is outside the target native width; do not redesign the source to fix it.
+
+Independent read-only code-reviewer found no CRITICAL/HIGH; one nonblocking P2 remains: the year-mode date selector changes its label while the yearly series shows the whole available range. Current single-year user data is unaffected. Defer this minor follow-up rather than restarting the long installer build after the explicit request to expedite; do not claim it fixed. No native implementation, history, settings, logos, model or database changes. Consistent local statistics backup integrity_check=ok. Package versions are 1.2.1; build uses the already-reviewed low-memory command-line-only codegen16/jobs1 override with opt-level3 and LTO unchanged.
+
+## Current correction: direct original Amicro components, not screenshot recreation
+
+User rejected the 1.2.0 adaptation and authorized using the author's repository directly after npm @subhanhq/amicro 1.0.1 failed (no executable). Both untouched reference files were rechecked against revision dc2a183f3a5e6e0ea1b0d75530ac084e3a4e0bd2 and match exactly. Scope: preserve original compact component composition, typography and animations; green #96a36c and real local data only; remove the redundant data table. Heatmap hover must expose date, words, captured audio duration and recording count; incomplete legacy recording counts remain explicitly unknown. Preserve all user data and all other pages/native recognition. Roles: gan-generator/frontend-patterns for source integration, independent gan-evaluator for original-versus-integrated composition and behavior. Verify real React/Motion/Recharts at the native content width, hover metrics, period controls, no internal scrollbars, no fabricated values, production frontend build and package before updating. No reset and no published replacement until verified.
+
+1.2.0 was published at https://github.com/wedding-postcards/Plot-Flow/releases/tag/v1.2.0; the earlier publication-pending heading below is historical. Current correction is not yet installed or verified.
 
 ## 1.2.0 built, locally verified and installed; publication pending
 

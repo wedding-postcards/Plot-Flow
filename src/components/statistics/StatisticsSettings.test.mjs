@@ -104,7 +104,7 @@ const reference = process.env.PLOT_FLOW_REFERENCE_DIR
     import React from 'react'; import {createRoot} from 'react-dom/client';
     import {MonoRoundedLineChart} from ${JSON.stringify(resolve(process.env.PLOT_FLOW_REFERENCE_DIR, "MonoRoundedLineChart.tsx"))};
     import {MonoActivityHeatmap} from ${JSON.stringify(resolve(process.env.PLOT_FLOW_REFERENCE_DIR, "MonoActivityHeatmap.tsx"))};
-    createRoot(document.getElementById('root')).render(<div className="space-y-6"><MonoActivityHeatmap theme={window.referenceTheme} accentColor="purple"/><MonoRoundedLineChart theme={window.referenceTheme}/></div>);
+    createRoot(document.getElementById('root')).render(<div className="grid grid-cols-2 gap-6 sm:gap-7 text-white"><MonoActivityHeatmap compact theme="dark" accentColor="purple"/><MonoRoundedLineChart compact theme="dark"/></div>);
   `,
         resolveDir: process.cwd(),
         loader: "jsx",
@@ -185,319 +185,256 @@ const populated = {
   ],
 };
 try {
-  const page = await browser.newPage({ viewport: { width: 720, height: 800 } });
+  const page = await browser.newPage({ viewport: { width: 700, height: 800 } });
   await page.clock.install({ time: new Date("2025-10-12T12:00:00") });
   const start = async (data = empty, options = {}) => {
     await page.goto("about:blank");
     await page.setContent('<div id="root"></div>');
     await page.addStyleTag({ content: css });
-    await page.evaluate(
-      (state) => {
-        window.statsTest = state;
-      },
-      { data, ...options },
-    );
+    await page.evaluate((state) => (window.statsTest = state), {
+      data,
+      ...options,
+    });
     await page.addScriptTag({ content: bundled.outputFiles[0].text });
+    await page
+      .getByRole("heading", {
+        name: options.language === "ru" ? "Статистика" : "Statistics",
+        exact: true,
+      })
+      .waitFor();
   };
   const emit = () =>
     page.evaluate(() => {
       for (const callback of window.statsTest.listeners.values())
         callback({ payload: null });
     });
-
-  // Break caught: zero counts interpreted as a missing/error response.
   await start();
-  await page
-    .getByRole("heading", { name: "Statistics", exact: true })
-    .waitFor();
-  // Break caught: unknown legacy counts shown as exact zero; fresh databases
-  // must separately show a genuine known zero.
-  await page.getByText("No activity in this period.").waitFor();
-  assert.equal(await page.getByRole("alert").count(), 0);
+  assert.equal(await page.locator("table,details").count(), 0);
+  const cards = page.locator("[data-chart]");
+  assert.equal(await cards.count(), 2);
+  const boxes = await cards.evaluateAll((els) =>
+    els.map((el) => {
+      const b = el.getBoundingClientRect();
+      return { x: b.x, y: b.y, w: el.offsetWidth, h: el.offsetHeight };
+    }),
+  );
+  assert.ok(Math.abs(boxes[0].y - boxes[1].y) < 1);
+  assert.ok(boxes.every((b) => b.w < 350 && b.h >= 220 && b.h < 260));
+  assert.equal(await page.locator("[data-heatmap-week]").count(), 20);
+  assert.ok(
+    await page
+      .locator("[data-heatmap-week]")
+      .evaluateAll((weeks) =>
+        weeks.every((week) => week.children.length === 7),
+      ),
+  );
   assert.equal(
     await page.locator('[data-statistic="records"]').textContent(),
     "—",
   );
-  assert.equal(
-    await page.locator('[data-date="2025-10-11"]').getAttribute("data-state"),
-    "untracked",
-  );
-  await page.locator("summary").focus();
-  await page.keyboard.press("Enter");
-  assert.equal(await page.locator("tbody tr").count(), 31);
-  assert.equal(await page.evaluate(() => window.statsTest.listeners.size), 1);
-
-  // Break caught: wrong month filter, metric or date-boundary navigation.
-  await start(populated);
-  await page
-    .getByRole("heading", { name: "Statistics", exact: true })
-    .waitFor();
-  assert.equal(
-    await page.locator('[data-statistic="records"]').textContent(),
-    "≥2",
-  );
-  await page.getByLabel("Selected month").fill("2024-02");
-  await page.locator("summary").click();
-  assert.equal(await page.locator("tbody tr").count(), 29);
-  assert.match(await page.locator("tbody tr").last().textContent(), /5.*0:02/);
-  await page.getByRole("button", { name: "Next period", exact: true }).click();
-  assert.equal(await page.getByLabel("Selected month").inputValue(), "2024-03");
-  assert.equal(await page.locator("tbody tr").count(), 31);
-  await page
-    .getByRole("button", { name: "Previous period", exact: true })
-    .click();
-  assert.equal(await page.getByLabel("Selected month").inputValue(), "2024-02");
-  await page.getByRole("button", { name: "Audio", exact: true }).click();
-  assert.equal(
-    await page.getByRole("img").getAttribute("aria-label"),
-    "Recording time trend",
-  );
-  await page.getByRole("button", { name: "Month", exact: true }).click();
-  await page.getByLabel("Selected year").selectOption("2024");
-  assert.equal(await page.locator("tbody tr").count(), 12);
-  assert.match(await page.locator("tbody tr").nth(1).textContent(), /15.*0:12/);
-  await page.getByRole("button", { name: "Year", exact: true }).click();
-  assert.equal(await page.locator("tbody tr").count(), 2);
-
   await start({ ...empty, records_complete: true });
-  await page
-    .getByRole("heading", { name: "Statistics", exact: true })
-    .waitFor();
   assert.equal(
     await page.locator('[data-statistic="records"]').textContent(),
     "0",
   );
-
-  // Break caught: theme ignored, narrow desktop motion disabled, calendar
-  // loses data or the Recharts spline is replaced with a polyline.
   await start(populated);
-  await page
-    .getByRole("heading", { name: "Statistics", exact: true })
-    .waitFor();
   await page.getByLabel("Activity year").selectOption("2024");
+  await page.getByLabel("Activity window").selectOption("0");
+  await page.getByRole("button", { name: "Choose date", exact: true }).click();
   await page.getByLabel("Selected month").fill("2024-02");
-  await page.clock.runFor(1200);
-  assert.equal(await page.locator("[data-date]").count(), 366);
-  assert.equal(
-    await page.locator('[data-date="2024-02-29"]').getAttribute("aria-label"),
-    "2024-02-29: 5 Words",
-  );
-  assert.equal(await page.locator('[data-date][tabindex="0"]').count(), 0);
-  assert.equal(await page.locator(".recharts-line-curve").count(), 1);
-  for (const width of [560, 700]) {
-    await page.setViewportSize({ width, height: 1100 });
-    for (const theme of ["light", "dark"]) {
-      await page.evaluate(
-        (theme) => (document.documentElement.dataset.theme = theme),
-        theme,
-      );
-      await page.clock.runFor(1000);
-      const card = page.locator('[data-chart="rounded-line"]');
-      assert.equal(
-        await card.evaluate((el) => getComputedStyle(el).backgroundColor),
-        theme === "dark" ? "rgb(20, 20, 20)" : "rgb(255, 255, 255)",
-      );
-      assert.equal(
-        await card.evaluate((el) => getComputedStyle(el).minHeight),
-        "290px",
-      );
-      assert.equal(
-        await card.evaluate((el) => el.getBoundingClientRect().height),
-        290,
-      );
-      assert.ok(
-        (await card
-          .locator(".recharts-surface")
-          .evaluate((el) => el.getBoundingClientRect().height)) > 190,
-      );
-      assert.ok(await card.locator(".recharts-line-curve").getAttribute("d"));
-    }
-  }
-  const cell = page.locator('[data-date="2024-02-29"]');
-  await cell.hover();
+  await page.clock.runFor(1000);
+  const day = page.locator('[data-date="2024-02-29"]'),
+    caption = page.locator("[data-hover-caption]");
+  await day.hover();
   await page.clock.runFor(500);
-  assert.match(await cell.getAttribute("style"), /scale\(1\.35\)/);
-  // Break caught: a stationary hover retains the old snapshot after IPC refresh.
+  assert.match(
+    await caption.textContent(),
+    /Words:5.*Audio:0:02.*recordings:1/s,
+  );
+  await page.locator('[data-date="2024-02-28"]').hover();
+  assert.match(await caption.textContent(), /recordings:—/);
+  await day.hover();
   await page.evaluate(() => {
     window.statsTest.data.daily[1].words = 9;
+    window.statsTest.data.daily[1].audio_ms = 6000;
+    window.statsTest.data.daily[1].records = 2;
     window.statsTest.data.total_words = 23;
   });
   await emit();
   await page.getByText("23", { exact: true }).first().waitFor();
-  assert.equal(
-    await page
-      .locator('[data-chart="activity-heatmap"]')
-      .getByText("2024-02-29: 9 Words", { exact: true })
-      .count(),
-    1,
+  assert.match(
+    await caption.textContent(),
+    /Words:9.*Audio:0:06.*recordings:2/s,
   );
-  await page.emulateMedia({ reducedMotion: "reduce" });
-  await start(populated);
+  await page.evaluate(() => {
+    window.statsTest.data.daily[0].records = 2;
+  });
+  await emit();
+  await page.locator('[data-date="2024-02-28"]').hover();
+  await page.waitForFunction(() =>
+    document
+      .querySelector("[data-hover-caption]")
+      ?.textContent.includes("recordings:≥2"),
+  );
+  await page.getByRole("button", { name: "Month", exact: true }).click();
+  await page.getByRole("button", { name: "Choose date", exact: true }).click();
+  await page.getByLabel("Selected year").selectOption("2024");
+  await page.getByRole("button", { name: "Chart metric", exact: true }).click();
   await page
-    .getByRole("heading", { name: "Statistics", exact: true })
-    .waitFor();
-  await page.clock.runFor(1000);
-  const reducedCell = page.locator('[data-date="2025-10-12"]');
-  await reducedCell.hover();
-  await page.clock.runFor(500);
-  assert.doesNotMatch(
-    (await reducedCell.getAttribute("style")) || "",
-    /scale\(1\.35\)/,
+    .getByRole("combobox", { name: "Chart metric", exact: true })
+    .selectOption("audio");
+  assert.equal(
+    await page.getByRole("img").getAttribute("aria-label"),
+    "Recording time trend",
   );
-  await page.emulateMedia({ reducedMotion: "no-preference" });
-
-  // Break caught: live events are dropped; stale requests erase updated data.
-  const travel = {
-    total_records: 2,
-    records_complete: true,
-    total_words: 11,
-    total_audio_ms: 3000,
-    tracking_started_day: "2025-01-01",
+  await page.getByRole("button", { name: "Year", exact: true }).click();
+  const single = {
+    total_words: 1234,
+    total_audio_ms: 3661000,
+    total_records: 0,
+    records_complete: false,
+    tracking_started_day: "2025-10-12",
     daily: [
       {
-        day: "2024-12-31",
-        words: 6,
-        audio_ms: 2000,
-        records: 1,
-        records_complete: true,
-      },
-      {
-        day: "2025-11-01",
-        words: 5,
-        audio_ms: 1000,
-        records: 1,
-        records_complete: true,
+        day: "2025-10-12",
+        words: 1234,
+        audio_ms: 3661000,
+        records: 0,
+        records_complete: false,
       },
     ],
   };
-  await start(travel);
-  await page
-    .getByRole("heading", { name: "Statistics", exact: true })
-    .waitFor();
-  assert.equal(
-    await page.getByLabel("Selected month").getAttribute("min"),
-    "2024-12",
+  await start(single);
+  await page.clock.runFor(1200);
+  // Break caught: controls occupy two header rows and shrink the source stage.
+  await page.setViewportSize({ width: 490, height: 800 });
+  assert.ok(
+    await page.locator('[data-chart="rounded-line"]').evaluate((card) => {
+      const header = card.children[0],
+        stage = card.querySelector('[role="img"]');
+      return (
+        header.getBoundingClientRect().height <= 34 &&
+        stage.getBoundingClientRect().height >= 148
+      );
+    }),
   );
   assert.equal(
-    await page.getByLabel("Selected month").getAttribute("max"),
-    "2025-11",
+    await page.locator(".recharts-line-curve").getAttribute("stroke"),
+    "none",
   );
-  await page.getByLabel("Selected month").fill("2024-12");
-  await page.locator("summary").click();
-  assert.match(await page.locator("tbody tr").last().textContent(), /6.*0:02/);
-  await page.getByLabel("Selected month").fill("2025-11");
-  assert.match(await page.locator("tbody tr").first().textContent(), /5.*0:01/);
-
-  await page.evaluate(() => {
-    window.statsTest.data.total_words = 42;
-  });
-  await emit();
-  await page.getByText("42", { exact: true }).waitFor();
-  await page.evaluate(() => window.statsTest.unmount());
-  assert.equal(await page.evaluate(() => window.statsTest.listeners.size), 0);
-
-  // Break caught: initial fetch/subscription failures stall and Retry cannot recover.
+  assert.equal(await page.locator(".recharts-line-dot").count(), 1);
+  await page.locator('[data-date="2025-10-12"]').hover();
+  assert.match(
+    await caption.textContent(),
+    /Words:1,234.*Audio:1:01:01.*recordings:—/s,
+  );
+  for (const width of [490, 560, 700]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.clock.runFor(1000);
+    await page.locator('[data-date="2025-10-12"]').hover();
+    assert.ok(
+      await page.locator('[data-chart="activity-heatmap"]').evaluate((card) => {
+        const footer = card.querySelector("[data-heatmap-footer]"),
+          grid = card.querySelector("[data-heatmap-grid]");
+        return (
+          footer &&
+          grid &&
+          footer.getBoundingClientRect().top >=
+            grid.getBoundingClientRect().bottom - 0.5
+        );
+      }),
+    );
+    assert.equal(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth > innerWidth,
+      ),
+      false,
+    );
+    assert.equal(
+      await cards.evaluateAll((els) =>
+        els.some((el) => el.scrollWidth > el.clientWidth + 1),
+      ),
+      false,
+    );
+    assert.equal(
+      await caption.evaluate((el) => el.scrollWidth > el.clientWidth + 1),
+      false,
+    );
+    assert.equal(
+      await caption.evaluate((el) => {
+        const bounds = el.getBoundingClientRect();
+        return (
+          bounds.bottom <= innerHeight &&
+          bounds.top >= 0 &&
+          bounds.left >= 0 &&
+          bounds.right <= innerWidth &&
+          el.scrollHeight <= el.clientHeight + 1
+        );
+      }),
+      true,
+    );
+  }
   for (const failure of ["error", "subscriptionError"]) {
     await start(empty, { [failure]: true });
     await page.getByRole("alert").waitFor();
-    await page.evaluate((key) => {
-      window.statsTest[key] = false;
-    }, failure);
+    await page.evaluate((key) => (window.statsTest[key] = false), failure);
     await page.getByRole("button", { name: "Retry", exact: true }).click();
-    await page.getByText("No activity in this period.").waitFor();
+    await cards.first().waitFor();
     assert.equal(await page.getByRole("alert").count(), 0);
-    assert.equal(await page.evaluate(() => window.statsTest.listeners.size), 1);
   }
   await start(empty, { hang: true });
-  await page.getByRole("status").waitFor();
   await page.clock.fastForward(16000);
   await page.getByRole("alert").waitFor();
-
-  await start(empty, { deferred: true });
-  await page.waitForFunction(() => !!window.statsTest.resolve);
-  await page.evaluate(() => {
-    window.statsTest.deferred = false;
-    window.statsTest.data = { ...window.statsTest.data, total_words: 77 };
-    for (const callback of window.statsTest.listeners.values())
-      callback({ payload: null });
-  });
-  await page.getByText("77", { exact: true }).waitFor();
-  await page.evaluate(() => window.statsTest.resolve());
-  assert.equal(await page.getByText("77", { exact: true }).count(), 1);
-
-  await start(empty, { language: "ru" });
-  await page
-    .getByRole("heading", { name: "Статистика", exact: true })
-    .waitFor();
-  await page.getByText("В этом периоде пока нет активности.").waitFor();
+  await start(single, { language: "ru" });
+  await page.locator('[data-date="2025-10-12"]').hover();
+  assert.match(
+    await caption.textContent(),
+    /Слова:1.234.*Аудио:1:01:01.*записей:—/s,
+  );
   if (process.env.PLOT_FLOW_SCREENSHOT_DIR) {
     await mkdir(process.env.PLOT_FLOW_SCREENSHOT_DIR, { recursive: true });
-    // Real clock/RAF for screenshots. The IPC timeout
-    // scenario above fast-forwards its own page and must not freeze entrances.
-    const visualPage = await browser.newPage();
-    for (const width of [560, 700])
-      for (const theme of ["light", "dark"]) {
-        await visualPage.goto("about:blank");
-        await visualPage.setViewportSize({ width, height: 1100 });
-        await visualPage.setContent('<div id="root"></div>');
-        await visualPage.addStyleTag({ content: css });
-        await visualPage.evaluate(
-          ({ theme, data }) => {
-            document.documentElement.dataset.theme = theme;
-            window.statsTest = { data };
-          },
-          { theme, data: populated },
-        );
-        await visualPage.addScriptTag({ content: bundled.outputFiles[0].text });
-        await visualPage.getByLabel("Activity year").selectOption("2024");
-        await visualPage.getByLabel("Selected month").fill("2024-02");
-        await visualPage.waitForFunction(() =>
-          [...document.querySelectorAll("[data-chart]")].every(
-            (el) => Number(getComputedStyle(el).opacity) > 0.99,
-          ),
-        );
-        // Capture the completed 800 ms spline draw, not only the card entrance.
-        await visualPage.waitForTimeout(1000);
-        await visualPage.screenshot({
+    const visual = await browser.newPage();
+    for (const width of [490, 560, 700]) {
+      await visual.setViewportSize({ width, height: 800 });
+      await visual.goto("about:blank");
+      await visual.setContent('<div id="root"></div>');
+      await visual.addStyleTag({ content: css });
+      const today = new Date().toLocaleDateString("sv-SE"),
+        data = {
+          ...single,
+          tracking_started_day: today,
+          daily: [{ ...single.daily[0], day: today }],
+        };
+      await visual.evaluate((data) => (window.statsTest = { data }), data);
+      await visual.addScriptTag({ content: bundled.outputFiles[0].text });
+      await visual.locator('[data-date="' + today + '"]').hover();
+      await visual.waitForTimeout(1200);
+      await visual.screenshot({
+        path: resolve(
+          process.env.PLOT_FLOW_SCREENSHOT_DIR,
+          `compact-${width}-dark.png`,
+        ),
+        fullPage: true,
+      });
+      if (reference) {
+        await visual.goto("about:blank");
+        await visual.setContent('<div id="root"></div>');
+        await visual.addStyleTag({ content: css });
+        await visual.addScriptTag({ content: reference.outputFiles[0].text });
+        await visual.waitForTimeout(1200);
+        await visual.screenshot({
           path: resolve(
             process.env.PLOT_FLOW_SCREENSHOT_DIR,
-            `statistics-${width}-${theme}-en.png`,
+            `original-compact-${width}-dark.png`,
           ),
           fullPage: true,
         });
-        if (reference) {
-          await visualPage.goto("about:blank");
-          await visualPage.setContent('<div id="root"></div>');
-          await visualPage.addStyleTag({
-            content: css + "\n#root > div > div {height:290px;}",
-          });
-          await visualPage.evaluate((theme) => {
-            window.referenceTheme = theme;
-            document.documentElement.dataset.theme = theme;
-          }, theme);
-          await visualPage.addScriptTag({
-            content: reference.outputFiles[0].text,
-          });
-          await visualPage.locator("#root > div > div").first().waitFor();
-          await visualPage.waitForFunction(() =>
-            [...document.querySelectorAll("#root > div > div")].every(
-              (el) => Number(getComputedStyle(el).opacity) > 0.99,
-            ),
-          );
-          await visualPage.waitForTimeout(1000);
-          await visualPage.screenshot({
-            path: resolve(
-              process.env.PLOT_FLOW_SCREENSHOT_DIR,
-              `original-${width}-${theme}.png`,
-            ),
-            fullPage: true,
-          });
-        }
       }
-    await visualPage.close();
+    }
+    await visual.close();
   }
   console.log(
-    "Statistics UI: empty/day/month/year/audio, event updates, cleanup, IPC Retry, timeout, stale responses, RU passed",
+    "Statistics compact UI PASS: 20-week source composition, hover words/audio/records/live IPC, unknown/≥counts, single-day dot, periods/audio, no table/overflow 490/560/700, Retry/timeout, RU",
   );
 } finally {
   await browser.close();

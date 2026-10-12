@@ -31,6 +31,9 @@ export function isStatisticsPointKnown(
 export type HeatmapDay = {
   date: string;
   count: number;
+  audio_ms: number;
+  records: number;
+  records_complete: boolean;
   level: 0 | 1 | 2 | 3 | 4;
   state: "known" | "untracked" | "future";
 };
@@ -66,6 +69,15 @@ export function buildHeatmap(
       cells.push({
         date,
         count,
+        audio_ms: stats.daily
+          .filter((row) => row.day === date)
+          .reduce((sum, row) => sum + row.audio_ms, 0),
+        records: stats.daily
+          .filter((row) => row.day === date)
+          .reduce((sum, row) => sum + (row.records || 0), 0),
+        records_complete: stats.daily
+          .filter((row) => row.day === date)
+          .every((row) => row.records_complete === true),
         state,
         level:
           count > 0
@@ -79,13 +91,38 @@ export function buildHeatmap(
   );
 }
 
+// The upstream compact card contains exactly twenty calendar weeks. A year
+// is selectable in three windows rather than widened into a scrolling grid.
+export function buildHeatmapWindow(
+  stats: UsageStatistics,
+  year: number,
+  today: string,
+  windowIndex: number,
+): (HeatmapDay | null)[][] {
+  const annual = buildHeatmap(stats, year, today);
+  const start = Math.min(windowIndex * 20, annual.length - 20);
+  return annual.slice(start, start + 20);
+}
+
+export function formatRecordCount(
+  records: number,
+  complete: boolean,
+  locale: string,
+): string {
+  return complete
+    ? records.toLocaleString(locale)
+    : records > 0
+      ? `≥${records.toLocaleString(locale)}`
+      : "—";
+}
+
 export function daysInMonth(year: number, month: number): number {
   if (month === 2)
     return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28;
   return [4, 6, 9, 11].includes(month) ? 30 : 31;
 }
 
-function validDay(day: string): boolean {
+export function validDay(day: string): boolean {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
   const [year, month, date] = day.split("-").map(Number);
   return (

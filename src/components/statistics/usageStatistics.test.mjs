@@ -15,10 +15,58 @@ const {
   getAvailableYears,
   shiftMonth,
   buildHeatmap,
+  buildHeatmapWindow,
+  formatRecordCount,
   isStatisticsPointKnown,
 } = await import(
   "data:text/javascript;base64," + Buffer.from(code).toString("base64")
 );
+
+test("compact windows cover a leap year with twenty actual weeks and overlapping final window", () => {
+  const data = {
+    ...stats,
+    daily: [
+      {
+        day: "2024-02-29",
+        words: 5,
+        audio_ms: 2500,
+        records: 1,
+        records_complete: true,
+      },
+      {
+        day: "2024-02-29",
+        words: 2,
+        audio_ms: 1500,
+        records: 2,
+        records_complete: false,
+      },
+    ],
+  };
+  const first = buildHeatmapWindow(data, 2024, "2025-10-12", 0);
+  const middle = buildHeatmapWindow(data, 2024, "2025-10-12", 1);
+  const last = buildHeatmapWindow(data, 2024, "2025-10-12", 2);
+  assert.equal(first.length, 20);
+  assert.equal(middle.length, 20);
+  assert.equal(last.length, 20);
+  assert.equal(middle[0][0].date, "2024-05-19");
+  assert.equal(last[0][0].date, "2024-08-18");
+  assert.equal(last.flat().filter(Boolean).at(-1).date, "2024-12-31");
+  assert.equal(
+    last.filter((week) => week.every((day) => day === null)).length,
+    0,
+  );
+  const leap = first.flat().find((day) => day?.date === "2024-02-29");
+  assert.equal(leap.count, 7);
+  assert.equal(leap.audio_ms, 4000);
+  assert.equal(leap.records, 3);
+  assert.equal(leap.records_complete, false);
+  assert.equal(
+    formatRecordCount(leap.records, leap.records_complete, "en"),
+    "≥3",
+  );
+  assert.equal(formatRecordCount(0, false, "en"), "—");
+  assert.equal(formatRecordCount(0, true, "en"), "0");
+});
 
 // Break caught: pretracking/future dates painted as zero activity or weekdays shifted.
 test("annual heatmap preserves calendar alignment and unknown dates", () => {

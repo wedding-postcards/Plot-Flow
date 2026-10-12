@@ -1,19 +1,15 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "../ui/Button";
 import { useUsageStatistics } from "./useUsageStatistics";
 import { formatPointDate } from "./StatisticsChart";
 import { MonoRoundedLineChart } from "./MonoRoundedLineChart";
 import { MonoActivityHeatmap } from "./MonoActivityHeatmap";
-import { useStatisticsTheme } from "./useStatisticsTheme";
 import {
   aggregateStatistics,
   formatAudioDuration,
   getAvailableYears,
   getStatisticsDateBounds,
-  shiftMonth,
-  isStatisticsPointKnown,
   type StatisticsPeriod,
 } from "./usageStatistics";
 
@@ -24,7 +20,7 @@ function localToday() {
 
 export function StatisticsSettings() {
   const { t, i18n } = useTranslation();
-  const theme = useStatisticsTheme();
+  const theme = "dark";
   const { data, loading, error, retry } = useUsageStatistics();
   const today = localToday();
   const [period, setPeriod] = useState<StatisticsPeriod>("day");
@@ -32,6 +28,20 @@ export function StatisticsSettings() {
   const [month, setMonth] = useState(today.slice(0, 7));
   const [year, setYear] = useState(Number(today.slice(0, 4)));
   const [heatmapYear, setHeatmapYear] = useState(Number(today.slice(0, 4)));
+  const [windowIndex, setWindowIndex] = useState(
+    Math.min(
+      2,
+      Math.floor(
+        (Math.floor(
+          (Date.parse(today + "T00:00:00Z") -
+            Date.parse(today.slice(0, 4) + "-01-01T00:00:00Z")) /
+            86400000,
+        ) +
+          new Date(today.slice(0, 4) + "-01-01T00:00:00Z").getUTCDay()) /
+          140,
+      ),
+    ),
+  );
   const bounds = useMemo(
     () =>
       data
@@ -62,13 +72,6 @@ export function StatisticsSettings() {
         : [],
     [data, period, dayYear, selectedYear, dayMonth, today],
   );
-
-  const move = (delta: number) => {
-    if (period === "day") {
-      const next = shiftMonth(dayYear, dayMonth, delta);
-      setMonth(`${next.year}-${String(next.month).padStart(2, "0")}`);
-    } else setYear(selectedYear + delta);
-  };
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
@@ -151,171 +154,40 @@ export function StatisticsSettings() {
               <p>{t("statistics.recordsNote")}</p>
             )}
           </div>
-          <MonoActivityHeatmap
-            theme={theme}
-            stats={data}
-            year={
-              years.includes(heatmapYear)
-                ? heatmapYear
-                : years[years.length - 1]
-            }
-            setYear={setHeatmapYear}
-            years={years}
-            today={today}
-          />
-          <section aria-label={t("statistics.trend")}>
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-4">
-                <div
-                  role="group"
-                  aria-label={t("statistics.metric")}
-                  className="flex gap-1"
-                >
-                  {(["words", "audio"] as const).map((value) => (
-                    <Button
-                      key={value}
-                      type="button"
-                      size="sm"
-                      variant={metric === value ? "primary-soft" : "secondary"}
-                      aria-pressed={metric === value}
-                      onClick={() => setMetric(value)}
-                    >
-                      {t(`statistics.metrics.${value}`)}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-              {period !== "year" && (
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    aria-label={t("statistics.previous")}
-                    disabled={
-                      period === "day"
-                        ? selectedMonth <= firstMonth
-                        : selectedYear <= years[0]
-                    }
-                    onClick={() => move(-1)}
-                  >
-                    <ChevronLeft size={16} aria-hidden="true" />
-                  </Button>
-                  {period === "day" ? (
-                    <label className="text-sm flex flex-wrap items-center gap-2">
-                      {t("statistics.selectedMonth")}
-                      <input
-                        type="month"
-                        value={selectedMonth}
-                        min={firstMonth}
-                        max={lastMonth}
-                        onChange={(event) => {
-                          if (/^\d{4}-\d{2}$/.test(event.target.value))
-                            setMonth(event.target.value);
-                        }}
-                        className="bg-background border border-mid-gray/20 rounded-md px-2 py-1"
-                      />
-                    </label>
-                  ) : (
-                    <label className="text-sm flex items-center gap-2">
-                      {t("statistics.selectedYear")}
-                      <select
-                        value={selectedYear}
-                        onChange={(event) =>
-                          setYear(Number(event.target.value))
-                        }
-                        className="bg-background border border-mid-gray/20 rounded-md px-2 py-1"
-                      >
-                        {years.map((value) => (
-                          <option key={value} value={value}>
-                            {value}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    aria-label={t("statistics.next")}
-                    disabled={
-                      period === "day"
-                        ? selectedMonth >= lastMonth
-                        : selectedYear >= years[years.length - 1]
-                    }
-                    onClick={() => move(1)}
-                  >
-                    <ChevronRight size={16} aria-hidden="true" />
-                  </Button>
-                </div>
-              )}
-              <MonoRoundedLineChart
-                theme={theme}
-                stats={data}
-                today={today}
-                points={points}
-                metric={metric}
-                period={period}
-                setPeriod={setPeriod}
-              />
-              {points.every(
-                (point) => point.words === 0 && point.audio_ms === 0,
-              ) && (
-                <p className="text-sm text-mid-gray">{t("statistics.empty")}</p>
-              )}
-              <details className="text-sm">
-                <summary className="cursor-pointer">
-                  {t("statistics.table")}
-                </summary>
-                <div className="mt-2 overflow-x-auto">
-                  <table className="w-full text-sm text-start">
-                    <caption className="sr-only">
-                      {t("statistics.table")}
-                    </caption>
-                    <thead>
-                      <tr className="border-b border-mid-gray/20">
-                        <th scope="col" className="text-start p-2">
-                          {t("statistics.date")}
-                        </th>
-                        <th scope="col" className="text-end p-2">
-                          {t("statistics.metrics.words")}
-                        </th>
-                        <th scope="col" className="text-end p-2">
-                          {t("statistics.totalAudio")}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {points.map((point) => (
-                        <tr
-                          key={point.day}
-                          className="border-b border-mid-gray/20"
-                        >
-                          <th
-                            scope="row"
-                            className="text-start p-2 font-normal"
-                          >
-                            {formatPointDate(point.day, period, i18n.language)}
-                          </th>
-                          <td className="text-end p-2 tabular-nums">
-                            {isStatisticsPointKnown(data, point.day, today)
-                              ? point.words.toLocaleString(i18n.language)
-                              : "—"}
-                          </td>
-                          <td className="text-end p-2 tabular-nums">
-                            {isStatisticsPointKnown(data, point.day, today)
-                              ? formatAudioDuration(point.audio_ms)
-                              : "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </details>
-            </div>
-          </section>
+          <div
+            data-statistics-cards
+            className="grid grid-cols-2 gap-6 sm:gap-7 text-white"
+          >
+            <MonoActivityHeatmap
+              stats={data}
+              today={today}
+              years={years}
+              year={
+                years.includes(heatmapYear)
+                  ? heatmapYear
+                  : years[years.length - 1]
+              }
+              setYear={setHeatmapYear}
+              windowIndex={windowIndex}
+              setWindowIndex={setWindowIndex}
+            />
+            <MonoRoundedLineChart
+              stats={data}
+              today={today}
+              points={points}
+              metric={metric}
+              setMetric={setMetric}
+              period={period}
+              setPeriod={setPeriod}
+              month={selectedMonth}
+              setMonth={setMonth}
+              firstMonth={firstMonth}
+              lastMonth={lastMonth}
+              year={selectedYear}
+              setYear={setYear}
+              years={years}
+            />
+          </div>
         </>
       )}
     </div>

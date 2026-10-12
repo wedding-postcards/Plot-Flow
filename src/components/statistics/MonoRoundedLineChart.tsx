@@ -1,5 +1,6 @@
-// Adapted from Subhan-code/Amicro--Micro-transitions- (MIT).
-// Verified GitHub revision dc2a183f3a5e6e0ea1b0d75530ac084e3a4e0bd2; original path: src/components/mono-charts/MonoRoundedLineChart.tsx
+// Source: Subhan-code/Amicro--Micro-transitions- (MIT), verified dc2a183f3a5e6e0ea1b0d75530ac084e3a4e0bd2.
+// Original: src/components/mono-charts/MonoRoundedLineChart.tsx; compact=true, real IPC data/localization only.
+import { useState, useRef, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
   formatAudioDuration,
@@ -9,7 +10,6 @@ import {
   type StatisticsPeriod,
 } from "./usageStatistics";
 import { formatPointDate } from "./StatisticsChart";
-import { statisticsMotion } from "./motionTokens";
 import { motion, useReducedMotion } from "motion/react";
 import {
   ResponsiveContainer,
@@ -23,33 +23,77 @@ import {
 import { DitherChartTooltipContent } from "./recharts-tooltip";
 
 export function MonoRoundedLineChart({
-  points,
   stats,
   today,
+  points,
   metric,
+  setMetric,
   period,
   setPeriod,
-  theme = "dark",
+  month,
+  setMonth,
+  firstMonth,
+  lastMonth,
+  year,
+  setYear,
+  years,
 }: {
   stats: UsageStatistics;
   today: string;
   points: StatisticsPoint[];
   metric: "words" | "audio";
+  setMetric: (metric: "words" | "audio") => void;
   period: StatisticsPeriod;
   setPeriod: (period: StatisticsPeriod) => void;
-  theme?: "dark" | "light";
+  month: string;
+  setMonth: (month: string) => void;
+  firstMonth: string;
+  lastMonth: string;
+  year: number;
+  setYear: (year: number) => void;
+  years: number[];
 }) {
   const { t, i18n } = useTranslation();
-  const isDark = theme === "dark";
-  const compact = false;
+  const theme = "dark",
+    isDark = true,
+    compact = true;
   const reduce = useReducedMotion();
+  const [settings, setSettings] = useState<"metric" | "date" | null>(null);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const metricTrigger = useRef<HTMLButtonElement>(null);
+  const dateTrigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!settings) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (
+        !settingsRef.current?.contains(target) &&
+        !metricTrigger.current?.contains(target) &&
+        !dateTrigger.current?.contains(target)
+      )
+        setSettings(null);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSettings(null);
+        (settings === "metric" ? metricTrigger : dateTrigger).current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [settings]);
+  // Unknown past/future dates stay gaps; tracked inactive dates are real zeros.
   const currentData = points.map((point) => ({
     label: formatPointDate(point.day, period, i18n.language, true),
-    value: !isStatisticsPointKnown(stats, point.day, today)
-      ? null
-      : metric === "words"
+    value: isStatisticsPointKnown(stats, point.day, today)
+      ? metric === "words"
         ? point.words
-        : point.audio_ms,
+        : point.audio_ms
+      : null,
   }));
   const latestVal = currentData.reduce(
     (sum, point) => sum + (point.value || 0),
@@ -64,11 +108,8 @@ export function MonoRoundedLineChart({
       data-chart="rounded-line"
       initial={reduce ? false : { opacity: 0, scale: 0.98, y: 6 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
-      transition={{
-        duration: reduce ? 0 : statisticsMotion.lineEntrance,
-        ease: statisticsMotion.ease,
-      }}
-      className={`relative w-full h-[290px] rounded-3xl transition-all duration-300 group flex flex-col justify-between overflow-hidden p-3.5 sm:p-4 ${
+      transition={{ duration: reduce ? 0 : 0.32, ease: [0.16, 1, 0.3, 1] }}
+      className={`relative w-full rounded-3xl transition-all duration-300 group flex flex-col justify-between overflow-hidden p-3.5 sm:p-4 ${
         compact ? "aspect-[16/10] min-h-[220px] w-full" : "min-h-[290px]"
       } ${
         isDark
@@ -84,9 +125,29 @@ export function MonoRoundedLineChart({
               ? formatValue(latestVal)
               : "—"}
           </span>
-          <span className="text-xs font-mono opacity-70">
-            {t(`statistics.metrics.${metric}`)}
-          </span>
+          <button
+            ref={metricTrigger}
+            type="button"
+            data-settings-trigger
+            aria-label={t("statistics.metric")}
+            title={t(`statistics.metrics.${metric}`)}
+            aria-expanded={settings === "metric"}
+            onClick={() => setSettings(settings === "metric" ? null : "metric")}
+            className="text-xs font-mono opacity-70 border-0 bg-transparent p-0"
+          >
+            {t(`statistics.metricShort.${metric}`)}
+          </button>
+          <button
+            ref={dateTrigger}
+            type="button"
+            data-settings-trigger
+            aria-label={t("statistics.chooseDate")}
+            aria-expanded={settings === "date"}
+            onClick={() => setSettings(settings === "date" ? null : "date")}
+            className="inline-flex items-center text-[9px] font-mono text-neutral-400 border-0 bg-transparent p-0"
+          >
+            {period === "day" ? month.slice(5) + "/" + month.slice(2, 4) : year}
+          </button>
         </div>
 
         {/* Timeframe pill selector */}
@@ -103,10 +164,12 @@ export function MonoRoundedLineChart({
             <button
               key={tf}
               type="button"
+              aria-label={t(`statistics.periods.${tf}`)}
               aria-pressed={period === tf}
               onClick={(e) => {
                 e.stopPropagation();
                 setPeriod(tf);
+                setSettings(null);
               }}
               className={`px-2 py-0.5 rounded-md transition-colors cursor-pointer border-0 ${
                 period === tf
@@ -118,7 +181,7 @@ export function MonoRoundedLineChart({
                     : "text-neutral-600 hover:text-black bg-transparent"
               }`}
             >
-              {t(`statistics.periods.${tf}`)}
+              {t(`statistics.periodShort.${tf}`)}
             </button>
           ))}
         </div>
@@ -173,28 +236,99 @@ export function MonoRoundedLineChart({
               type="monotone"
               dataKey="value"
               name={t(`statistics.metrics.${metric}`)}
-              stroke={"#96a36c"}
+              stroke={
+                currentData.filter((point) => point.value !== null).length > 1
+                  ? "#FFFFFF"
+                  : "none"
+              }
               strokeWidth={3}
               strokeLinecap="round"
               strokeLinejoin="round"
               dot={{
                 r: 3.5,
-                fill: "#96a36c",
+                fill: "#FFFFFF",
                 stroke: isDark ? "#181818" : "#FFFFFF",
                 strokeWidth: 2,
               }}
               activeDot={{
                 r: 5.5,
-                fill: "#96a36c",
+                fill: "#FFFFFF",
                 stroke: isDark ? "#A1A1AA" : "#52525B",
                 strokeWidth: 2,
               }}
               isAnimationActive={!reduce}
-              animationDuration={statisticsMotion.lineDuration}
+              animationDuration={800}
             />
           </LineChart>
         </ResponsiveContainer>
       </div>
+      {settings && (
+        <div
+          ref={settingsRef}
+          role="dialog"
+          aria-label={t(
+            settings === "metric"
+              ? "statistics.metric"
+              : "statistics.chooseDate",
+          )}
+          className="absolute top-12 inset-x-3 z-30 px-3 py-2 rounded-xl text-xs shadow-2xl backdrop-blur-md border font-sans bg-[#181818]/90 border-white/10 text-white"
+        >
+          {settings === "metric" ? (
+            <select
+              autoFocus
+              aria-label={t("statistics.metric")}
+              value={metric}
+              onChange={(event) => {
+                setMetric(event.target.value as "words" | "audio");
+                setSettings(null);
+                metricTrigger.current?.focus();
+              }}
+              className="w-full bg-[#181818]"
+            >
+              {(["words", "audio"] as const).map((value) => (
+                <option key={value} value={value}>
+                  {t(`statistics.metrics.${value}`)}
+                </option>
+              ))}
+            </select>
+          ) : period === "day" ? (
+            <input
+              autoFocus
+              aria-label={t("statistics.selectedMonth")}
+              type="month"
+              value={month}
+              min={firstMonth}
+              max={lastMonth}
+              onChange={(event) => {
+                if (/^\d{4}-\d{2}$/.test(event.target.value)) {
+                  setMonth(event.target.value);
+                  setSettings(null);
+                  dateTrigger.current?.focus();
+                }
+              }}
+              className="w-full bg-[#181818]"
+            />
+          ) : (
+            <select
+              autoFocus
+              aria-label={t("statistics.selectedYear")}
+              value={year}
+              onChange={(event) => {
+                setYear(Number(event.target.value));
+                setSettings(null);
+                dateTrigger.current?.focus();
+              }}
+              className="w-full bg-[#181818]"
+            >
+              {years.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }
