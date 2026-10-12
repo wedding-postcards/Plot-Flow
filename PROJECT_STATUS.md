@@ -1,6 +1,10 @@
 # Plot Flow 1.1.0
 
-## 1.1.0 verified locally; publication pending
+## 1.1.0 verified, installed and published; user acceptance pending
+
+Published code commit 6aa5bbf and immutable v1.1.0 tag match the tested sources. Public release is latest, not draft/prerelease; only asset Plot-Flow-1.1.0-Windows-x64-setup.exe, 275812243 bytes, GitHub digest sha256:0f75c84369ae5360196a49f02a3ab2207a0f46f71b10a6cd919503e56d422891 matches the local tested installer. Direct README download checked HTTP 200 and attachment filename. README/release notes retain only the requested brief English description and download link. Independent release gate approved this exact SHA, source scope, all 22 installed DLLs, model checksum and preserved settings. Remaining old local 1.0.1 installer recycled after current 1.1.0 verification; Desktop contains current app, shortcut and latest installer folder only. Archived user data and development source preserved.
+
+Self-evaluation: accuracy 4/5 (tested artifact/current GUI/remote digest; clean Windows/other hardware unverified), completeness 4/5 (all requested navigation/statistics/install/publish/cleanup done; user acceptance pending), clarity 4/5 (brief README and visible section dividers; native UI has a minor localized date punctuation nit), actionability 5/5 (working app opened, direct installer link and Desktop copy), conciseness 4/5 (final handoff kept short; ongoing build updates were necessary). Overall 4.2/5; no material remaining defect, no claim of universal hardware compatibility. Future cosmetic punctuation can be included in a subsequent approved update without rebuilding a verified installer solely for that nit.
 
 Windows installer built successfully: 275812243 bytes, SHA256 0f75c84369ae5360196a49f02a3ab2207a0f46f71b10a6cd919503e56d422891. Fresh installation passed the bundled-model checksum and DLL-directory/System32-only native loading probe. Synthetic Russian speech recognized exactly on GPU and CPU with Windows-only PATH (158/857ms inference for 8.605s audio; not a controlled speed comparison). Installed GUI verified all three pages, the settings divider and preserved controls, zero-start statistics, then synthetic 800-word/8:30 daily/monthly/yearly/audio curves and restart persistence. Actual microphone start/cancellation logged; counters unchanged. Native UI checks used Computer Use; implementation/release competencies include GitHub operations, safety guard and independent code-reviewer.
 
@@ -16,7 +20,7 @@ Approved: exactly three navigation entries Settings, History, Statistics. Compos
 
 Previous stage at this task's start: 1.0.1 installed into Desktop/Plot Flow through the normal Explorer installer broker; current user data imported with verified hashes. Local portable marker pins data to that folder, avoiding the Codex MSIX package's AppData redirection. 283 Rust tests, frontend build/lint, DLL isolation and synthetic CPU/GPU inference passed. Old-version recycling and GitHub publication were unfinished; public download was v1.0.0. Preserve canonical Desktop/Plot Flow, user-data archives and development source.
 
-## 1.0.1 in progress
+## 1.0.1 changes included in 1.1.0
 
 Approved changes: remove both paste-delay controls; defaults 10ms before/after with conservative existing 100ms modifier hold unchanged; start-hidden and autostart default enabled; preload the verified bundled model and default to retaining it in memory. One-time migration preserves devices, shortcuts and explicit alternative unload timeouts. User approved a close face crop for the Windows taskbar icon; preserve full Bilbo with ground in the sidebar and the approved white-square shortcut icon. README reduced to one sentence and direct download link.
 
