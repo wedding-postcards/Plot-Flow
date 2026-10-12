@@ -1,11 +1,83 @@
 export interface UsageStatistics {
   total_words: number;
   total_audio_ms: number;
+  total_records: number;
+  records_complete: boolean;
   tracking_started_day: string;
-  daily: { day: string; words: number; audio_ms: number }[];
+  daily: {
+    day: string;
+    words: number;
+    audio_ms: number;
+    records: number;
+    records_complete: boolean;
+  }[];
 }
 export type StatisticsPeriod = "day" | "month" | "year";
-export type StatisticsPoint = UsageStatistics["daily"][number];
+export type StatisticsPoint = { day: string; words: number; audio_ms: number };
+
+export function isStatisticsPointKnown(
+  stats: Pick<UsageStatistics, "tracking_started_day" | "daily">,
+  key: string,
+  today: string,
+): boolean {
+  if (stats.daily.some((row) => validDay(row.day) && row.day.startsWith(key)))
+    return true;
+  return (
+    key >= stats.tracking_started_day.slice(0, key.length) &&
+    key <= today.slice(0, key.length)
+  );
+}
+
+export type HeatmapDay = {
+  date: string;
+  count: number;
+  level: 0 | 1 | 2 | 3 | 4;
+  state: "known" | "untracked" | "future";
+};
+export function buildHeatmap(
+  stats: UsageStatistics,
+  year: number,
+  today: string,
+): (HeatmapDay | null)[][] {
+  const rows = new Map<string, number>();
+  for (const row of stats.daily)
+    if (validDay(row.day))
+      rows.set(row.day, (rows.get(row.day) || 0) + row.words);
+  const maximum = Math.max(
+    1,
+    ...[...rows]
+      .filter(([date]) => date.startsWith(`${year}-`))
+      .map(([, count]) => count),
+  );
+  const cells: (HeatmapDay | null)[] = Array(
+    new Date(`${year}-01-01T00:00:00Z`).getUTCDay(),
+  ).fill(null);
+  for (let month = 1; month <= 12; month++)
+    for (let day = 1; day <= daysInMonth(year, month); day++) {
+      const date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const count = rows.get(date) || 0;
+      const state = rows.has(date)
+        ? "known"
+        : date > today
+          ? "future"
+          : date < stats.tracking_started_day
+            ? "untracked"
+            : "known";
+      cells.push({
+        date,
+        count,
+        state,
+        level:
+          count > 0
+            ? (Math.min(4, Math.ceil((count / maximum) * 4)) as 1 | 2 | 3 | 4)
+            : 0,
+      });
+    }
+  while (cells.length % 7) cells.push(null);
+  return Array.from({ length: cells.length / 7 }, (_, i) =>
+    cells.slice(i * 7, i * 7 + 7),
+  );
+}
 
 export function daysInMonth(year: number, month: number): number {
   if (month === 2)

@@ -53,12 +53,18 @@ pub struct DailyUsage {
     pub day: String,
     pub words: u64,
     pub audio_ms: u64,
+    /// Known recordings since count tracking began; never inferred from words.
+    pub records: u64,
+    /// False when this day includes unknown historical recording counts.
+    pub records_complete: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
 pub struct UsageStatistics {
     pub total_words: u64,
     pub total_audio_ms: u64,
+    pub total_records: u64,
+    pub records_complete: bool,
     pub tracking_started_day: String,
     pub daily: Vec<DailyUsage>,
 }
@@ -190,7 +196,7 @@ fn initialize_database(path: &std::path::Path, started_day: &str) -> Result<Conn
         std::fs::create_dir_all(parent)
             .map_err(|error| format!("Cannot create statistics directory: {error}"))?;
     }
-    let connection =
+    let mut connection =
         Connection::open(path).map_err(|error| format!("Cannot open statistics.db: {error}"))?;
     connection
         .busy_timeout(DATABASE_BUSY_TIMEOUT)
@@ -199,7 +205,16 @@ fn initialize_database(path: &std::path::Path, started_day: &str) -> Result<Conn
         .execute_batch(
             "PRAGMA journal_mode = WAL;
          PRAGMA synchronous = FULL;
-         BEGIN IMMEDIATE;
+         ",
+        )
+        .map_err(|error| format!("Cannot initialize statistics.db: {error}"))?;
+    // Schema discovery and additive migration share one write transaction.
+    // Existing word/audio values are never rewritten or reconstructed.
+    let transaction = connection
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .map_err(|error| error.to_string())?;
+    transaction.execute_batch(
+        "
          CREATE TABLE IF NOT EXISTS statistics_metadata (
              singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
              tracking_started_day TEXT NOT NULL
@@ -207,17 +222,38 @@ fn initialize_database(path: &std::path::Path, started_day: &str) -> Result<Conn
          CREATE TABLE IF NOT EXISTS daily_usage (
              day TEXT PRIMARY KEY,
              words INTEGER NOT NULL CHECK (typeof(words) = 'integer' AND words >= 0),
-             audio_ms INTEGER NOT NULL CHECK (typeof(audio_ms) = 'integer' AND audio_ms >= 0)
+             audio_ms INTEGER NOT NULL CHECK (typeof(audio_ms) = 'integer' AND audio_ms >= 0),
+             records INTEGER NOT NULL DEFAULT 0 CHECK (typeof(records) = 'integer' AND records >= 0),
+             records_complete INTEGER NOT NULL DEFAULT 1 CHECK (typeof(records_complete) = 'integer' AND records_complete IN (0, 1))
          ) WITHOUT ROWID;
-         COMMIT;",
+         ",
         )
         .map_err(|error| format!("Cannot initialize statistics.db: {error}"))?;
-    connection.execute(
+    let columns: Vec<String> = {
+        let mut statement = transaction
+            .prepare("PRAGMA table_info(daily_usage)")
+            .map_err(|error| error.to_string())?;
+        let rows = statement
+            .query_map([], |row| row.get(1))
+            .map_err(|error| error.to_string())?;
+        rows.collect::<Result<_, _>>()
+            .map_err(|error| error.to_string())?
+    };
+    if !columns.iter().any(|column| column == "records") {
+        transaction.execute_batch("ALTER TABLE daily_usage ADD COLUMN records INTEGER NOT NULL DEFAULT 0 CHECK (typeof(records) = 'integer' AND records >= 0);")
+            .map_err(|error| error.to_string())?;
+    }
+    if !columns.iter().any(|column| column == "records_complete") {
+        transaction.execute_batch("ALTER TABLE daily_usage ADD COLUMN records_complete INTEGER NOT NULL DEFAULT 0 CHECK (typeof(records_complete) = 'integer' AND records_complete IN (0, 1));")
+            .map_err(|error| error.to_string())?;
+    }
+    transaction.execute(
         "INSERT OR IGNORE INTO statistics_metadata (singleton, tracking_started_day) VALUES (1, ?1)",
         [started_day],
     ).map_err(|error| error.to_string())?;
     // Validate persisted state on opening; corrupt data cannot look like zero.
-    read_snapshot(&connection)?;
+    read_snapshot(&transaction)?;
+    transaction.commit().map_err(|error| error.to_string())?;
     Ok(connection)
 }
 
@@ -289,15 +325,18 @@ fn commit_record(
     let transaction = connection
         .transaction()
         .map_err(|error| error.to_string())?;
-    let previous: Option<(i64, i64)> = transaction
+    let previous: Option<(i64, i64, i64, bool)> = transaction
         .query_row(
-            "SELECT words, audio_ms FROM daily_usage WHERE day = ?1",
+            "SELECT words, audio_ms, records, records_complete FROM daily_usage WHERE day = ?1",
             [day],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
         )
         .optional()
         .map_err(|error| error.to_string())?;
-    let (old_words, old_audio) = previous.unwrap_or((0, 0));
+    let (old_words, old_audio, old_records, records_complete) = previous.unwrap_or((0, 0, 0, true));
+    let records = old_records
+        .checked_add(1)
+        .ok_or("Daily statistics recording count overflow")?;
     let words = old_words
         .checked_add(words)
         .ok_or("Daily statistics word count overflow")?;
@@ -306,9 +345,9 @@ fn commit_record(
         .ok_or("Daily statistics audio duration overflow")?;
     transaction
         .execute(
-            "INSERT INTO daily_usage (day, words, audio_ms) VALUES (?1, ?2, ?3)
-         ON CONFLICT(day) DO UPDATE SET words = excluded.words, audio_ms = excluded.audio_ms",
-            params![day, words, audio_ms],
+            "INSERT INTO daily_usage (day, words, audio_ms, records, records_complete) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(day) DO UPDATE SET words = excluded.words, audio_ms = excluded.audio_ms, records = excluded.records",
+            params![day, words, audio_ms, records, records_complete],
         )
         .map_err(|error| error.to_string())?;
     transaction.commit().map_err(|error| error.to_string())
@@ -324,7 +363,7 @@ fn read_snapshot(connection: &Connection) -> Result<UsageStatistics, String> {
         .map_err(|error| error.to_string())?;
     validate_day(&tracking_started_day)?;
     let mut statement = connection
-        .prepare("SELECT day, words, audio_ms FROM daily_usage ORDER BY day ASC")
+        .prepare("SELECT day, words, audio_ms, records, records_complete FROM daily_usage ORDER BY day ASC")
         .map_err(|error| error.to_string())?;
     let rows = statement
         .query_map([], |row| {
@@ -332,18 +371,27 @@ fn read_snapshot(connection: &Connection) -> Result<UsageStatistics, String> {
                 day: row.get(0)?,
                 words: row.get(1)?,
                 audio_ms: row.get(2)?,
+                records: row.get(3)?,
+                records_complete: row.get(4)?,
             })
         })
         .map_err(|error| error.to_string())?;
     let mut snapshot = UsageStatistics {
         total_words: 0,
         total_audio_ms: 0,
+        total_records: 0,
+        records_complete: true,
         tracking_started_day,
         daily: Vec::new(),
     };
     for row in rows {
         let row = row.map_err(|error| error.to_string())?;
         validate_day(&row.day)?;
+        snapshot.total_records = snapshot
+            .total_records
+            .checked_add(row.records)
+            .ok_or("Total statistics recording count overflow")?;
+        snapshot.records_complete &= row.records_complete;
         snapshot.total_words = snapshot
             .total_words
             .checked_add(row.words)
@@ -368,6 +416,141 @@ mod tests {
 
     fn open(path: &std::path::Path, day: &str) -> StatisticsManager {
         StatisticsManager::open(path.to_path_buf(), day.into(), Box::new(|| {})).unwrap()
+    }
+
+    #[test]
+    fn recording_counts_include_zero_word_calls_and_survive_restart() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("statistics.db");
+        {
+            let manager = open(&path, "2026-10-12");
+            manager.record(0, 0, "2026-10-12".into());
+            manager.record(4, 123, "2026-10-12".into());
+            manager.record(0, 50, "2026-10-13".into());
+            manager.flush().unwrap();
+            manager.flush().unwrap();
+            let json = serde_json::to_value(manager.snapshot().unwrap()).unwrap();
+            assert_eq!(json["total_records"], 3);
+            assert_eq!(json["records_complete"], true);
+            assert_eq!(json["daily"][0]["records"], 2);
+            assert_eq!(json["daily"][1]["records"], 1);
+            assert_eq!(json["daily"][0]["records_complete"], true);
+        }
+        let manager = open(&path, "2026-10-14");
+        let json = serde_json::to_value(manager.snapshot().unwrap()).unwrap();
+        assert_eq!(json["total_records"], 3);
+        assert_eq!(json["records_complete"], true);
+    }
+
+    #[test]
+    fn legacy_migration_preserves_counters_and_unknown_recording_history() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("statistics.db");
+        Connection::open(&path).unwrap().execute_batch(
+            "CREATE TABLE statistics_metadata (singleton INTEGER PRIMARY KEY, tracking_started_day TEXT NOT NULL);
+             INSERT INTO statistics_metadata VALUES (1, '2026-10-10');
+             CREATE TABLE daily_usage (day TEXT PRIMARY KEY, words INTEGER NOT NULL, audio_ms INTEGER NOT NULL) WITHOUT ROWID;
+             INSERT INTO daily_usage VALUES ('2026-10-10', 17, 12345), ('2026-10-11', 0, 0);"
+        ).unwrap();
+        {
+            let manager = open(&path, "2026-10-12");
+            let json = serde_json::to_value(manager.snapshot().unwrap()).unwrap();
+            assert_eq!(json["total_words"], 17);
+            assert_eq!(json["total_audio_ms"], 12345);
+            assert_eq!(json["tracking_started_day"], "2026-10-10");
+            assert_eq!(json["total_records"], 0);
+            assert_eq!(json["records_complete"], false);
+            for row in json["daily"].as_array().unwrap() {
+                assert_eq!(row["records"], 0);
+                assert_eq!(row["records_complete"], false);
+            }
+            manager.record(2, 100, "2026-10-10".into());
+            manager.record(3, 200, "2026-10-12".into());
+        }
+        for _ in 0..2 {
+            let manager = open(&path, "2026-10-13");
+            let json = serde_json::to_value(manager.snapshot().unwrap()).unwrap();
+            assert_eq!(json["total_words"], 22);
+            assert_eq!(json["total_audio_ms"], 12645);
+            assert_eq!(json["total_records"], 2);
+            assert_eq!(json["records_complete"], false);
+            assert_eq!(json["daily"][0]["words"], 19);
+            assert_eq!(json["daily"][0]["audio_ms"], 12445);
+            assert_eq!(json["daily"][0]["records"], 1);
+            assert_eq!(json["daily"][0]["records_complete"], false);
+            assert_eq!(json["daily"][2]["records"], 1);
+            assert_eq!(json["daily"][2]["records_complete"], true);
+        }
+    }
+
+    #[test]
+    fn recording_overflow_rolls_back_words_and_audio() {
+        let dir = tempdir().unwrap();
+        let mut connection =
+            initialize_database(&dir.path().join("statistics.db"), "2026-10-12").unwrap();
+        connection.execute("INSERT INTO daily_usage (day, words, audio_ms, records, records_complete) VALUES ('2026-10-12', 7, 123, ?1, 1)", [i64::MAX]).unwrap();
+        assert!(commit_record(&mut connection, 1, 50, "2026-10-12")
+            .unwrap_err()
+            .contains("record"));
+        let counters: (i64, i64, i64) = connection
+            .query_row(
+                "SELECT words, audio_ms, records FROM daily_usage",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(counters, (7, 123, i64::MAX));
+    }
+
+    #[test]
+    fn total_recording_overflow_is_an_error_not_a_wrapped_snapshot() {
+        let dir = tempdir().unwrap();
+        let connection =
+            initialize_database(&dir.path().join("statistics.db"), "2026-10-12").unwrap();
+        for day in ["2026-10-12", "2026-10-13", "2026-10-14"] {
+            connection.execute("INSERT INTO daily_usage (day, words, audio_ms, records, records_complete) VALUES (?1, 0, 0, ?2, 1)", params![day, i64::MAX]).unwrap();
+        }
+        assert!(read_snapshot(&connection)
+            .unwrap_err()
+            .contains("recording count overflow"));
+    }
+
+    #[test]
+    fn failed_migration_rolls_back_schema_and_preserves_legacy_rows() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("statistics.db");
+        let connection = Connection::open(&path).unwrap();
+        connection.execute_batch(
+            "CREATE TABLE statistics_metadata (singleton INTEGER PRIMARY KEY, tracking_started_day TEXT NOT NULL);
+             INSERT INTO statistics_metadata VALUES (1, 'invalid');
+             CREATE TABLE daily_usage (day TEXT PRIMARY KEY, words INTEGER NOT NULL, audio_ms INTEGER NOT NULL) WITHOUT ROWID;
+             INSERT INTO daily_usage VALUES ('2026-10-10', 17, 12345);"
+        ).unwrap();
+        assert!(initialize_database(&path, "2026-10-12").is_err());
+        let counters: (i64, i64) = connection
+            .query_row("SELECT words, audio_ms FROM daily_usage", [], |row| {
+                Ok((row.get(0)?, row.get(1)?))
+            })
+            .unwrap();
+        assert_eq!(counters, (17, 12345));
+        let columns: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('daily_usage')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(columns, 3);
+        connection
+            .execute(
+                "UPDATE statistics_metadata SET tracking_started_day = '2026-10-10'",
+                [],
+            )
+            .unwrap();
+        let manager = open(&path, "2026-10-12");
+        let snapshot = manager.snapshot().unwrap();
+        assert_eq!(snapshot.total_records, 0);
+        assert!(!snapshot.records_complete);
     }
 
     #[test]
@@ -424,6 +607,8 @@ mod tests {
             UsageStatistics {
                 total_words: 0,
                 total_audio_ms: 0,
+                total_records: 0,
+                records_complete: true,
                 tracking_started_day: "2026-10-12".into(),
                 daily: vec![],
             }
@@ -450,12 +635,16 @@ mod tests {
                 DailyUsage {
                     day: "2026-10-12".into(),
                     words: 5,
-                    audio_ms: 2000
+                    audio_ms: 2000,
+                    records: 2,
+                    records_complete: true,
                 },
                 DailyUsage {
                     day: "2026-10-13".into(),
                     words: 0,
-                    audio_ms: 999
+                    audio_ms: 999,
+                    records: 1,
+                    records_complete: true,
                 },
             ]
         );
@@ -477,6 +666,7 @@ mod tests {
         assert_eq!(snapshot.tracking_started_day, "2026-10-12");
         assert_eq!(snapshot.total_words, 7);
         assert_eq!(snapshot.total_audio_ms, 1234);
+        assert_eq!(snapshot.total_records, 1);
     }
 
     #[test]
@@ -530,6 +720,14 @@ mod tests {
                     )
                     .unwrap();
                 assert_eq!(words, 9);
+                let records: u64 = connection
+                    .query_row(
+                        "SELECT records FROM daily_usage WHERE day = '2026-10-12'",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(records, 1);
                 observer.fetch_add(1, Ordering::SeqCst);
             }),
         )
@@ -613,6 +811,7 @@ mod tests {
         let snapshot = manager.snapshot().unwrap();
         assert_eq!(snapshot.total_words, 3);
         assert_eq!(snapshot.total_audio_ms, 300);
+        assert_eq!(snapshot.total_records, 2);
     }
 
     #[test]

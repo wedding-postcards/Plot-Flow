@@ -14,9 +14,53 @@ const {
   formatAudioDuration,
   getAvailableYears,
   shiftMonth,
+  buildHeatmap,
+  isStatisticsPointKnown,
 } = await import(
   "data:text/javascript;base64," + Buffer.from(code).toString("base64")
 );
+
+// Break caught: pretracking/future dates painted as zero activity or weekdays shifted.
+test("annual heatmap preserves calendar alignment and unknown dates", () => {
+  const weeks = buildHeatmap(
+    {
+      total_words: 8,
+      total_audio_ms: 1000,
+      tracking_started_day: "2024-02-28",
+      daily: [
+        {
+          day: "2024-02-29",
+          words: 8,
+          audio_ms: 1000,
+          records: 0,
+          records_complete: false,
+        },
+      ],
+    },
+    2024,
+    "2024-03-01",
+  );
+  const cells = weeks.flat().filter(Boolean);
+  assert.equal(cells.length, 366);
+  assert.equal(weeks[0][0], null); // Monday-start; Jan 1 2024 is Monday (Sunday blank).
+  assert.equal(weeks[0][1].date, "2024-01-01");
+  assert.equal(cells.find((c) => c.date === "2024-02-27").state, "untracked");
+  assert.equal(cells.find((c) => c.date === "2024-02-28").count, 0);
+  assert.equal(cells.find((c) => c.date === "2024-02-29").count, 8);
+  assert.equal(cells.find((c) => c.date === "2024-03-02").state, "future");
+});
+test("chart gaps unknown history but retains persisted clock-change dates", () => {
+  const data = {
+    tracking_started_day: "2025-10-12",
+    daily: [{ day: "2025-11-01", words: 5, audio_ms: 1000 }],
+  };
+  assert.equal(isStatisticsPointKnown(data, "2025-10-11", "2025-10-12"), false);
+  assert.equal(isStatisticsPointKnown(data, "2025-10-12", "2025-10-12"), true);
+  assert.equal(isStatisticsPointKnown(data, "2025-10-13", "2025-10-12"), false);
+  assert.equal(isStatisticsPointKnown(data, "2025-11-01", "2025-10-12"), true);
+  assert.equal(isStatisticsPointKnown(data, "2025-11", "2025-10-12"), true);
+  assert.equal(isStatisticsPointKnown(data, "2024", "2025-10-12"), false);
+});
 
 const stats = {
   total_words: 26,

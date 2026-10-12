@@ -2,15 +2,18 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "../ui/Button";
-import { SettingsGroup } from "../ui/SettingsGroup";
 import { useUsageStatistics } from "./useUsageStatistics";
-import { StatisticsChart, formatPointDate } from "./StatisticsChart";
+import { formatPointDate } from "./StatisticsChart";
+import { MonoRoundedLineChart } from "./MonoRoundedLineChart";
+import { MonoActivityHeatmap } from "./MonoActivityHeatmap";
+import { useStatisticsTheme } from "./useStatisticsTheme";
 import {
   aggregateStatistics,
   formatAudioDuration,
   getAvailableYears,
   getStatisticsDateBounds,
   shiftMonth,
+  isStatisticsPointKnown,
   type StatisticsPeriod,
 } from "./usageStatistics";
 
@@ -21,12 +24,14 @@ function localToday() {
 
 export function StatisticsSettings() {
   const { t, i18n } = useTranslation();
+  const theme = useStatisticsTheme();
   const { data, loading, error, retry } = useUsageStatistics();
   const today = localToday();
   const [period, setPeriod] = useState<StatisticsPeriod>("day");
   const [metric, setMetric] = useState<"words" | "audio">("words");
   const [month, setMonth] = useState(today.slice(0, 7));
   const [year, setYear] = useState(Number(today.slice(0, 4)));
+  const [heatmapYear, setHeatmapYear] = useState(Number(today.slice(0, 4)));
   const bounds = useMemo(
     () =>
       data
@@ -92,26 +97,44 @@ export function StatisticsSettings() {
       )}
       {data && (
         <>
-          <SettingsGroup title={t("statistics.totals")}>
+          <section
+            aria-label={t("statistics.totals")}
+            className={`rounded-3xl p-3.5 sm:p-4 border ${theme === "dark" ? "bg-[#141414] text-white border-white/[0.08] shadow-[0_4px_20px_rgba(0,0,0,0.3)]" : "bg-white border-neutral-200 text-black shadow-[0_4px_20px_rgba(0,0,0,0.04)]"}`}
+          >
             <dl className="flex flex-wrap gap-6 px-4 py-3">
               <div>
                 <dt className="text-xs text-mid-gray">
                   {t("statistics.totalWords")}
                 </dt>
-                <dd className="text-lg font-semibold tabular-nums">
+                <dd className="text-xl sm:text-2xl font-bold tracking-tight tabular-nums font-sans">
                   {data.total_words.toLocaleString(i18n.language)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs text-mid-gray">
+                  {t("statistics.totalRecords")}
+                </dt>
+                <dd
+                  data-statistic="records"
+                  className="text-xl sm:text-2xl font-bold tracking-tight tabular-nums font-sans"
+                >
+                  {data.records_complete === true
+                    ? (data.total_records ?? 0).toLocaleString(i18n.language)
+                    : (data.total_records ?? 0) > 0
+                      ? `≥${data.total_records!.toLocaleString(i18n.language)}`
+                      : "—"}
                 </dd>
               </div>
               <div>
                 <dt className="text-xs text-mid-gray">
                   {t("statistics.totalAudio")}
                 </dt>
-                <dd className="text-lg font-semibold tabular-nums">
+                <dd className="text-xl sm:text-2xl font-bold tracking-tight tabular-nums font-sans">
                   {formatAudioDuration(data.total_audio_ms)}
                 </dd>
               </div>
             </dl>
-          </SettingsGroup>
+          </section>
           <div className="text-xs text-mid-gray space-y-1">
             <p>
               {t("statistics.trackingSince", {
@@ -124,28 +147,25 @@ export function StatisticsSettings() {
             </p>
             <p>{t("statistics.localNote")}</p>
             <p>{t("statistics.audioNote")}</p>
+            {data.records_complete !== true && (
+              <p>{t("statistics.recordsNote")}</p>
+            )}
           </div>
-          <SettingsGroup title={t("statistics.trend")}>
-            <div className="p-4 space-y-4">
+          <MonoActivityHeatmap
+            theme={theme}
+            stats={data}
+            year={
+              years.includes(heatmapYear)
+                ? heatmapYear
+                : years[years.length - 1]
+            }
+            setYear={setHeatmapYear}
+            years={years}
+            today={today}
+          />
+          <section aria-label={t("statistics.trend")}>
+            <div className="space-y-4">
               <div className="flex flex-wrap items-center gap-4">
-                <div
-                  role="group"
-                  aria-label={t("statistics.period")}
-                  className="flex gap-1"
-                >
-                  {(["day", "month", "year"] as const).map((value) => (
-                    <Button
-                      key={value}
-                      type="button"
-                      size="sm"
-                      variant={period === value ? "primary-soft" : "secondary"}
-                      aria-pressed={period === value}
-                      onClick={() => setPeriod(value)}
-                    >
-                      {t(`statistics.periods.${value}`)}
-                    </Button>
-                  ))}
-                </div>
                 <div
                   role="group"
                   aria-label={t("statistics.metric")}
@@ -230,10 +250,14 @@ export function StatisticsSettings() {
                   </Button>
                 </div>
               )}
-              <StatisticsChart
+              <MonoRoundedLineChart
+                theme={theme}
+                stats={data}
+                today={today}
                 points={points}
                 metric={metric}
                 period={period}
+                setPeriod={setPeriod}
               />
               {points.every(
                 (point) => point.words === 0 && point.audio_ms === 0,
@@ -275,10 +299,14 @@ export function StatisticsSettings() {
                             {formatPointDate(point.day, period, i18n.language)}
                           </th>
                           <td className="text-end p-2 tabular-nums">
-                            {point.words.toLocaleString(i18n.language)}
+                            {isStatisticsPointKnown(data, point.day, today)
+                              ? point.words.toLocaleString(i18n.language)
+                              : "—"}
                           </td>
                           <td className="text-end p-2 tabular-nums">
-                            {formatAudioDuration(point.audio_ms)}
+                            {isStatisticsPointKnown(data, point.day, today)
+                              ? formatAudioDuration(point.audio_ms)
+                              : "—"}
                           </td>
                         </tr>
                       ))}
@@ -287,7 +315,7 @@ export function StatisticsSettings() {
                 </div>
               </details>
             </div>
-          </SettingsGroup>
+          </section>
         </>
       )}
     </div>
