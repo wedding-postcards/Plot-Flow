@@ -230,8 +230,6 @@ fn restore_mute(prev_muted: Option<bool>) {
     }
 }
 
-const WHISPER_SAMPLE_RATE: usize = 16000;
-
 /* ──────────────────────────────────────────────────────────────── */
 
 #[derive(Clone, Debug)]
@@ -980,7 +978,11 @@ impl AudioRecordingManager {
         self.cancel_generation.load(Ordering::Acquire) != generation
     }
 
-    pub fn stop_recording(&self, binding_id: &str, cancel_generation: u64) -> Option<Vec<f32>> {
+    pub fn stop_recording(
+        &self,
+        binding_id: &str,
+        cancel_generation: u64,
+    ) -> Option<super::captured_audio::CapturedAudio> {
         self.invalidate_recording_readiness();
         let mut state = self.state.lock().unwrap();
 
@@ -1013,18 +1015,19 @@ impl AudioRecordingManager {
                     }
                 }
 
-                let samples = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
-                    match rec.stop() {
-                        Ok(buf) => buf,
-                        Err(e) => {
-                            error!("stop() failed: {e}");
-                            Vec::new()
+                let (samples, duration_ms) =
+                    if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                        match rec.stop() {
+                            Ok(buf) => (buf, rec.recorded_duration_ms()),
+                            Err(e) => {
+                                error!("stop() failed: {e}");
+                                (Vec::new(), 0)
+                            }
                         }
-                    }
-                } else {
-                    error!("Recorder not available");
-                    Vec::new()
-                };
+                    } else {
+                        error!("Recorder not available");
+                        (Vec::new(), 0)
+                    };
 
                 *self.is_recording.lock().unwrap() = false;
                 self.set_state(&mut self.state.lock().unwrap(), RecordingState::Idle);
@@ -1043,16 +1046,10 @@ impl AudioRecordingManager {
                     return None;
                 }
 
-                // Pad if very short
-                let s_len = samples.len();
-                // debug!("Got {} samples", s_len);
-                if s_len < WHISPER_SAMPLE_RATE && s_len > 0 {
-                    let mut padded = samples;
-                    padded.resize(WHISPER_SAMPLE_RATE * 5 / 4, 0.0);
-                    Some(padded)
-                } else {
-                    Some(samples)
-                }
+                Some(super::captured_audio::CapturedAudio::new(
+                    samples,
+                    duration_ms,
+                ))
             }
             _ => None,
         }

@@ -1,4 +1,36 @@
 {
+  "statistics": {
+    "title": "Statistics",
+    "totals": "Since this update",
+    "totalWords": "Total words",
+    "totalAudio": "Recording time",
+    "trend": "Activity",
+    "period": "Chart period",
+    "metric": "Chart metric",
+    "periods": {
+      "day": "Day",
+      "month": "Month",
+      "year": "Year"
+    },
+    "metrics": {
+      "words": "Words",
+      "audio": "Audio"
+    },
+    "selectedMonth": "Selected month",
+    "selectedYear": "Selected year",
+    "previous": "Previous period",
+    "next": "Next period",
+    "table": "View data table",
+    "date": "Date",
+    "empty": "No activity in this period.",
+    "loading": "Loading statistics…",
+    "error": "Could not load statistics. Please retry.",
+    "wordsTrend": "Word count trend",
+    "audioTrend": "Recording time trend",
+    "trackingSince": "Counting started on {{date}}.",
+    "localNote": "Statistics are stored locally, independently of history. Earlier recordings are not imported.",
+    "audioNote": "Recording time, including pauses. Not recognition time."
+  },
   "plotFlow": {
     "modelLabel": "Model",
     "checking": "Checking the bundled model…",
@@ -21,6 +53,8 @@
     "secureInputWarning": "⚠ Shortcuts blocked by Secure Input"
   },
   "sidebar": {
+    "settings": "Settings",
+    "statistics": "Statistics",
     "general": "General",
     "models": "Models",
     "advanced": "Advanced",

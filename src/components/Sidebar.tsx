@@ -1,8 +1,8 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Cog, History, Mic } from "lucide-react";
+import { ChartNoAxesCombined, History, Mic } from "lucide-react";
 
-import { GeneralSettings, AdvancedSettings, HistorySettings } from "./settings";
+import { SettingsPage, StatisticsSettings, HistorySettings } from "./settings";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
 
@@ -22,10 +22,10 @@ interface SectionConfig {
 }
 
 export const SECTIONS_CONFIG = {
-  general: {
-    labelKey: "sidebar.general",
+  settings: {
+    labelKey: "sidebar.settings",
     icon: Mic,
-    component: GeneralSettings,
+    component: SettingsPage,
     enabled: () => true,
   },
   history: {
@@ -34,10 +34,10 @@ export const SECTIONS_CONFIG = {
     component: HistorySettings,
     enabled: () => true,
   },
-  advanced: {
-    labelKey: "sidebar.advanced",
-    icon: Cog,
-    component: AdvancedSettings,
+  statistics: {
+    labelKey: "sidebar.statistics",
+    icon: ChartNoAxesCombined,
+    component: StatisticsSettings,
     enabled: () => true,
   },
 } as const satisfies Record<string, SectionConfig>;

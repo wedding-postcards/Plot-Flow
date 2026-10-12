@@ -103,6 +103,7 @@ pub struct AudioRecorder {
     config_cache: Arc<Mutex<Option<(String, cpal::SupportedStreamConfig)>>>,
     /// Set by cpal when the active input stream can no longer capture.
     stream_error: Arc<AtomicBool>,
+    completed_duration_ms: Arc<AtomicU64>,
 }
 
 impl AudioRecorder {
@@ -117,6 +118,7 @@ impl AudioRecorder {
             selected_channel: None,
             config_cache: Arc::new(Mutex::new(None)),
             stream_error: Arc::new(AtomicBool::new(false)),
+            completed_duration_ms: Arc::new(AtomicU64::new(0)),
         })
     }
 
@@ -200,6 +202,7 @@ impl AudioRecorder {
         let selected_channel = self.selected_channel;
         let config_cache = Arc::clone(&self.config_cache);
         let stream_error = Arc::clone(&self.stream_error);
+        let completed_duration_ms = Arc::clone(&self.completed_duration_ms);
 
         let worker = std::thread::spawn(move || {
             let transport = Arc::new(CaptureTransportState::default());
@@ -321,13 +324,14 @@ impl AudioRecorder {
                     // Timestamp for the play()-returned -> first-samples gap the
                     // init handshake can't see (hardware dependent).
                     let stream_running_at = Instant::now();
-                    let processor = CaptureProcessor::new(
+                    let mut processor = CaptureProcessor::new(
                         sample_rate,
                         vad,
                         level_cb,
                         audio_cb,
                         stream_running_at,
                     );
+                    processor.completed_duration_ms = completed_duration_ms;
                     run_consumer(
                         processor,
                         sample_consumer,
@@ -398,6 +402,13 @@ impl AudioRecorder {
         let (resp_tx, resp_rx) = mpsc::channel();
         tx.send(Cmd::Stop(resp_tx))?;
         Ok(resp_rx.recv()?)
+    }
+
+    /// Actual microphone audio time of the completed recording, including pauses
+    /// but excluding resampling/inference padding and idle microphone samples.
+    /// Read immediately after stop() while no following recording has started.
+    pub fn recorded_duration_ms(&self) -> u64 {
+        self.completed_duration_ms.load(Ordering::Acquire)
     }
 
     /// True when the active capture stream must be rebuilt.
@@ -713,6 +724,8 @@ struct CaptureProcessor {
     // ---- recording-scoped: reset by `begin_recording` ------------------- //
     vad_policy: VadPolicy,
     processed_samples: Vec<f32>,
+    captured_raw_samples: u64,
+    completed_duration_ms: Arc<AtomicU64>,
     awaiting_first_captured_chunk: Option<Instant>,
     capture_ready_tx: Option<mpsc::Sender<()>>,
     total_dropped_samples: u64,
@@ -720,6 +733,10 @@ struct CaptureProcessor {
 }
 
 impl CaptureProcessor {
+    fn recorded_duration_ms(&self) -> u64 {
+        self.captured_raw_samples.saturating_mul(1_000) / u64::from(self.in_sample_rate)
+    }
+
     fn new(
         in_sample_rate: u32,
         vad: Option<VadConfig>,
@@ -764,6 +781,8 @@ impl CaptureProcessor {
             first_chunk_logged: false,
             vad_policy: VadPolicy::Offline,
             processed_samples: Vec::new(),
+            captured_raw_samples: 0,
+            completed_duration_ms: Arc::new(AtomicU64::new(0)),
             awaiting_first_captured_chunk: None,
             capture_ready_tx: None,
             total_dropped_samples: 0,
@@ -779,6 +798,7 @@ impl CaptureProcessor {
         self.overrun_warning_logged = false;
         self.vad_policy = policy;
         self.processed_samples.clear();
+        self.captured_raw_samples = 0;
         self.visualizer.reset();
         self.frame_resampler.reset();
         if policy != VadPolicy::Disabled {
@@ -820,6 +840,8 @@ impl CaptureProcessor {
         if disposition == ChunkDisposition::Discard {
             return;
         }
+
+        self.captured_raw_samples = self.captured_raw_samples.saturating_add(raw.len() as u64);
 
         if let Some(buckets) = self.visualizer.feed(raw) {
             if let Some(callback) = &self.level_cb {
@@ -870,6 +892,8 @@ impl CaptureProcessor {
 
     /// Flush the resampler tail and hand back the finished recording.
     fn finish_recording(&mut self) -> Vec<f32> {
+        self.completed_duration_ms
+            .store(self.recorded_duration_ms(), Ordering::Release);
         let vad_policy = self.vad_policy;
         self.frame_resampler.finish(|frame: &[f32]| {
             handle_frame(

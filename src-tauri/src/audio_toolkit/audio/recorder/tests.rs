@@ -78,6 +78,36 @@ fn idle_chunks_are_discarded_without_reaching_the_recording() {
 }
 
 #[test]
+fn usage_time_uses_captured_audio_before_frame_padding() {
+    for (rate, sample_count, milliseconds) in [(16_000, 8_000, 500), (48_000, 24_000, 500)] {
+        let mut processor = CaptureProcessor::new(rate, None, None, None, Instant::now());
+        let (ready_tx, _ready_rx) = mpsc::channel();
+        processor.begin_recording(VadPolicy::Disabled, ready_tx);
+        processor.process_raw_chunk(&vec![0.5; sample_count], ChunkDisposition::Capture);
+        let recorded = processor.finish_recording();
+        // An intentional backend-sized tail stays in inference input, not usage time.
+        assert!(recorded.len() >= 8_000);
+        assert_eq!(processor.recorded_duration_ms(), milliseconds);
+    }
+}
+
+#[test]
+fn usage_time_does_not_include_idle_microphone_or_previous_recording() {
+    let mut processor = CaptureProcessor::new(16_000, None, None, None, Instant::now());
+    processor.process_raw_chunk(&[0.5; 16_000], ChunkDisposition::Discard);
+    let (ready_tx, _ready_rx) = mpsc::channel();
+    processor.begin_recording(VadPolicy::Disabled, ready_tx);
+    processor.process_raw_chunk(&[0.5; 8_000], ChunkDisposition::Capture);
+    processor.finish_recording();
+    assert_eq!(processor.recorded_duration_ms(), 500);
+    let (ready_tx, _ready_rx) = mpsc::channel();
+    processor.begin_recording(VadPolicy::Disabled, ready_tx);
+    processor.process_raw_chunk(&[0.5; 4_000], ChunkDisposition::Capture);
+    processor.finish_recording();
+    assert_eq!(processor.recorded_duration_ms(), 250);
+}
+
+#[test]
 fn shutdown_is_processed_without_audio_samples() {
     let (_producer, consumer) = RingBuffer::<f32>::new(48_000);
     let (cmd_tx, cmd_rx) = mpsc::channel();

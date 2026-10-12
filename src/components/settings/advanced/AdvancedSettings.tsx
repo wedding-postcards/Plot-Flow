@@ -16,7 +16,6 @@ import { HistoryLimit } from "../HistoryLimit";
 import { RecordingRetentionPeriodSelector } from "../RecordingRetentionPeriod";
 import { VoiceActivityDetection } from "../VoiceActivityDetection";
 import { FillerWordRemoval } from "../FillerWordRemoval";
-import { PasteDelay } from "../debug/PasteDelay";
 import { AlwaysOnMicrophone } from "../AlwaysOnMicrophone";
 import { SoundPicker } from "../SoundPicker";
 
@@ -43,14 +42,6 @@ export const AdvancedSettings: React.FC = () => {
         <TypingToolSetting descriptionMode="tooltip" grouped={true} />
         <ClipboardHandlingSetting descriptionMode="tooltip" grouped={true} />
         <AutoSubmit descriptionMode="tooltip" grouped={true} />
-        <PasteDelay descriptionMode="tooltip" grouped={true} />
-        <PasteDelay
-          descriptionMode="tooltip"
-          grouped={true}
-          settingKey="paste_delay_after_ms"
-          labelKey="settings.debug.pasteDelayAfter.title"
-          descriptionKey="settings.debug.pasteDelayAfter.description"
-        />
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.advanced.groups.transcription")}>

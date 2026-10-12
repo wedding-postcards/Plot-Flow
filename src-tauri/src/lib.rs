@@ -35,6 +35,7 @@ use env_filter::Builder as EnvFilterBuilder;
 use managers::audio::AudioRecordingManager;
 use managers::history::HistoryManager;
 use managers::model::ModelManager;
+use managers::statistics::StatisticsManager;
 use managers::transcription::TranscriptionManager;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
@@ -217,7 +218,20 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(model_manager.clone());
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
+    match StatisticsManager::new(app_handle) {
+        Ok(manager) => {
+            app_handle.manage(Arc::new(manager));
+        }
+        Err(err) => log::error!("Failed to initialize usage statistics: {}", err),
+    }
     app_handle.manage(tray::TrayState::new());
+
+    // The sole bundled model is verified by ModelManager before selection.
+    // Start its load now, not at the first hotkey; LoadingGuard coalesces a
+    // concurrent recording-start request. No microphone capture is enabled.
+    if settings::should_preload_bundled_model(&settings::get_settings(app_handle)) {
+        transcription_manager.initiate_model_load();
+    }
 
     // Note: Shortcuts are NOT initialized here.
     // The frontend is responsible for calling the `initialize_shortcuts` command
@@ -718,6 +732,7 @@ pub fn run(cli_args: CliArgs) {
             commands::get_app_dir_path,
             commands::get_app_settings,
             commands::get_default_settings,
+            commands::statistics::get_usage_statistics,
             commands::get_log_dir_path,
             commands::set_log_level,
             commands::open_recordings_folder,
@@ -1109,6 +1124,11 @@ pub fn run(cli_args: CliArgs) {
         }
         // Teardown transcribe.cpp before exit
         tauri::RunEvent::Exit => {
+            if let Some(statistics) = app.try_state::<Arc<StatisticsManager>>() {
+                if let Err(err) = statistics.flush() {
+                    log::error!("Failed to flush usage statistics at exit: {}", err);
+                }
+            }
             if let Some(tm) = app.try_state::<Arc<TranscriptionManager>>() {
                 let _ = tm.unload_model();
             }

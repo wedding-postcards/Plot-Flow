@@ -5,6 +5,7 @@ use crate::audio_toolkit::{is_microphone_access_denied, is_no_input_device_error
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::HistoryManager;
 use crate::managers::model::ModelManager;
+use crate::managers::statistics::{count_words, StatisticsManager};
 use crate::managers::transcription::StreamWorkKind;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{get_settings, AppSettings, OverlayStyle, APPLE_INTELLIGENCE_PROVIDER_ID};
@@ -679,7 +680,10 @@ impl ShortcutAction for TranscribeAction {
             );
 
             let stop_recording_time = Instant::now();
-            if let Some(samples) = rm.stop_recording(&binding_id, cancel_generation) {
+            if let Some(captured_audio) = rm.stop_recording(&binding_id, cancel_generation) {
+                let audio_ms = captured_audio.duration_ms;
+                let samples = captured_audio.samples;
+                let statistics_day = chrono::Local::now().format("%Y-%m-%d").to_string();
                 debug!(
                     "Recording stopped and samples retrieved in {:?}, sample count: {}",
                     stop_recording_time.elapsed(),
@@ -794,6 +798,7 @@ impl ShortcutAction for TranscribeAction {
                             }
 
                             // Save to history if WAV was saved
+                            let word_count = count_words(&transcription);
                             if wav_saved {
                                 if let Err(err) = hm.save_entry(
                                     file_name,
@@ -822,6 +827,16 @@ impl ShortcutAction for TranscribeAction {
                                         return;
                                     }
 
+                                    // Only completed, non-cancelled recognitions count.
+                                    // Queue numeric totals without waiting for disk I/O;
+                                    // history retention and paste errors do not erase usage.
+                                    if word_count > 0 {
+                                        if let Some(statistics) =
+                                            ah_clone.try_state::<Arc<StatisticsManager>>()
+                                        {
+                                            statistics.record(word_count, audio_ms, statistics_day);
+                                        }
+                                    }
                                     match utils::paste(final_text, ah_clone.clone()) {
                                         Ok(()) => debug!(
                                             "Text pasted successfully in {:?}",

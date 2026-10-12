@@ -43,7 +43,7 @@ function App() {
   const [startupError, setStartupError] = useState(false);
   const { status: modelStatus, refresh: refreshModel } = useBundledModel();
   const [currentSection, setCurrentSection] =
-    useState<SidebarSection>("general");
+    useState<SidebarSection>("settings");
   const direction = getLanguageDirection(i18n.language);
   const refreshAudioDevices = useSettingsStore(
     (state) => state.refreshAudioDevices,

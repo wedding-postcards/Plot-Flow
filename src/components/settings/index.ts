@@ -1,4 +1,6 @@
 // Settings section components
+export { SettingsPage } from "./SettingsPage";
+export { StatisticsSettings } from "../statistics/StatisticsSettings";
 export { GeneralSettings } from "./general/GeneralSettings";
 export { AdvancedSettings } from "./advanced/AdvancedSettings";
 export { DebugSettings } from "./debug/DebugSettings";

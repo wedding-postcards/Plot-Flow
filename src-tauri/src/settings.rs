@@ -133,10 +133,10 @@ pub enum OverlayStyle {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum ModelUnloadTimeout {
+    #[default]
     Never,
     Immediately,
     Min2,
-    #[default]
     Min5,
     Min10,
     Min15,
@@ -519,7 +519,7 @@ fn default_model() -> String {
     "".to_string()
 }
 
-const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 2;
+const CURRENT_SETTINGS_SCHEMA_VERSION: u32 = 3;
 
 fn default_settings_schema_version() -> u32 {
     CURRENT_SETTINGS_SCHEMA_VERSION
@@ -538,11 +538,11 @@ fn default_translate_to_english() -> bool {
 }
 
 fn default_start_hidden() -> bool {
-    false
+    true
 }
 
 fn default_autostart_enabled() -> bool {
-    false
+    true
 }
 
 fn default_update_checks_enabled() -> bool {
@@ -597,11 +597,11 @@ fn default_word_correction_threshold() -> f64 {
 }
 
 fn default_paste_delay_ms() -> u64 {
-    60
+    10
 }
 
 fn default_paste_delay_after_ms() -> u64 {
-    60
+    10
 }
 
 fn default_auto_submit() -> bool {
@@ -1101,6 +1101,11 @@ pub(crate) fn apply_bundled_model_readiness(settings: &mut AppSettings, ready: b
     changed
 }
 
+pub(crate) fn should_preload_bundled_model(settings: &AppSettings) -> bool {
+    settings.selected_model == crate::managers::model::BUNDLED_MODEL_ID
+        && settings.model_unload_timeout != ModelUnloadTimeout::Immediately
+}
+
 /// Rebuilds settings from a store value that failed to deserialize as a whole.
 /// Every stored field that is individually valid is kept; only broken values
 /// (e.g. an enum variant written by a newer or older version) fall back to
@@ -1201,6 +1206,20 @@ fn apply_settings_migrations(
         updated = true;
     }
 
+    if stored_schema_version < 3 {
+        // The delay controls are no longer exposed. Retain the conservative
+        // modifier hold in input.rs, but avoid two additional 60ms waits.
+        settings.paste_delay_ms = default_paste_delay_ms();
+        settings.paste_delay_after_ms = default_paste_delay_after_ms();
+        // Upgrade only the former default; preserve explicit memory-saving
+        // timeout choices. Users can still select one in Advanced.
+        if settings.model_unload_timeout == ModelUnloadTimeout::Min5 {
+            settings.model_unload_timeout = ModelUnloadTimeout::Never;
+        }
+        settings.settings_schema_version = CURRENT_SETTINGS_SCHEMA_VERSION;
+        updated = true;
+    }
+
     // The generic GPU choice was removed in favor of Auto or an exact device.
     // Normalize settings created by builds that exposed that short-lived option.
     if settings.transcribe_accelerator == TranscribeAcceleratorSetting::Gpu
@@ -1279,8 +1298,57 @@ mod tests {
     use super::*;
 
     #[test]
+    fn preload_requires_ready_model_and_respects_immediate_unload() {
+        let mut settings = get_default_settings();
+        assert!(!should_preload_bundled_model(&settings));
+        apply_bundled_model_readiness(&mut settings, true);
+        assert!(should_preload_bundled_model(&settings));
+        settings.model_unload_timeout = ModelUnloadTimeout::Immediately;
+        assert!(!should_preload_bundled_model(&settings));
+    }
+
+    #[test]
+    fn latency_defaults_migrate_once_and_preserve_user_controls() {
+        let mut settings = get_default_settings();
+        settings.settings_schema_version = 2;
+        settings.paste_delay_ms = 60;
+        settings.paste_delay_after_ms = 60;
+        settings.model_unload_timeout = ModelUnloadTimeout::Min5;
+        settings.start_hidden = false;
+        settings.autostart_enabled = false;
+        settings.history_limit = 17;
+        let old = serde_json::to_value(&settings).unwrap();
+        assert!(apply_settings_migrations(&mut settings, &old));
+        assert_eq!(settings.paste_delay_ms, 10);
+        assert_eq!(settings.paste_delay_after_ms, 10);
+        assert_eq!(settings.model_unload_timeout, ModelUnloadTimeout::Never);
+        assert!(!settings.start_hidden);
+        assert!(!settings.autostart_enabled);
+        assert_eq!(settings.history_limit, 17);
+        settings.model_unload_timeout = ModelUnloadTimeout::Min2;
+        let current = serde_json::to_value(&settings).unwrap();
+        assert!(!apply_settings_migrations(&mut settings, &current));
+        assert_eq!(settings.model_unload_timeout, ModelUnloadTimeout::Min2);
+    }
+
+    #[test]
+    fn latency_upgrade_preserves_explicit_memory_saving_timeout() {
+        let mut settings = get_default_settings();
+        settings.settings_schema_version = 2;
+        settings.model_unload_timeout = ModelUnloadTimeout::Min2;
+        let old = serde_json::to_value(&settings).unwrap();
+        assert!(apply_settings_migrations(&mut settings, &old));
+        assert_eq!(settings.model_unload_timeout, ModelUnloadTimeout::Min2);
+    }
+
+    #[test]
     fn bundled_product_defaults_and_initial_selection() {
         let mut settings = get_default_settings();
+        assert!(settings.start_hidden);
+        assert!(settings.autostart_enabled);
+        assert_eq!(settings.paste_delay_ms, 10);
+        assert_eq!(settings.paste_delay_after_ms, 10);
+        assert_eq!(settings.model_unload_timeout, ModelUnloadTimeout::Never);
         assert_eq!(settings.history_limit, 5);
         assert!(!settings.experimental_enabled);
         assert!(!settings.update_checks_enabled);
