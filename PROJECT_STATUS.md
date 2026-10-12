@@ -1,5 +1,23 @@
 # Plot Flow 1.2.1
 
+## 1.2.1 published as latest at the user's request
+
+Resumed existing draft id410850281 (no duplicate release), uploaded the already-tested installer and verified GitHub digest/size exactly: Plot-Flow-1.2.1-Windows-x64-setup.exe, 277765055 bytes, sha256:c8960c7e32e0773280122c04e802e36373be7615ad65be989ce412fa9a82961d. Published v1.2.1 as latest, draft=false/prerelease=false. Runtime source/tag remains immutable 90847c30ff33c09fbcf9de9b1ef2bd514f6ad75b; only project-status documentation is updated in this resumption. README keeps the requested five lines, brief English description and direct latest-installer button/link. Release: https://github.com/wedding-postcards/Plot-Flow/releases/tag/v1.2.1. Installer: https://github.com/wedding-postcards/Plot-Flow/releases/download/v1.2.1/Plot-Flow-1.2.1-Windows-x64-setup.exe.
+
+No rebuild, application reinstall, data reset or redundant full testing. Installed Desktop/Plot Flow remains 1.2.1, users' ongoing usage is not touched. Scope/role: skill-maksa, github-ops and an independent read-only release gate for tag, artifact identity, README and public download. Prior pause and build sections below are historical and superseded by this publication.
+
+Final independent release gate APPROVE: public latest/tag identity, uploaded asset bytes/digest and unauthenticated README download HEAD HTTP200 with the exact attachment filename/277765055-byte length all confirmed. Main independently confirmed remote README text exactly matches the requested local five-line page. Publication handoff is complete; no application/data operations in this turn. Self-evaluation update: publication actionability now 5/5 (live working download), accuracy 4/5 (package identity and link verified, partner hardware outside this scope), completeness 4/5 (publication fulfilled; previously documented nonblocking multi-year label issue is unchanged). No new source-feature claims or universal hardware guarantees.
+
+## Publication resumed at the user's explicit request
+
+Publish the already-tested 1.2.1 installer using existing draft id410850281; no rebuild, app update or user-data operations. Source/tag 90847c30ff33c09fbcf9de9b1ef2bd514f6ad75b already match remote. Desktop artifact reverified SHA256 c8960c7e32e0773280122c04e802e36373be7615ad65be989ce412fa9a82961d, 277765055 bytes. Apply github-ops and independent read-only code-reviewer gate limited to artifact identity, public release/latest state and README/download availability. User asks to expedite; do not rerun full application checks. Preserve unrelated untracked files and immutable release tag.
+
+## Previous publication pause (superseded by the latest request)
+
+User said to push to GitHub later. Code commit 90847c3 and immutable v1.2.1 tag had already been pushed before that message; do not rewrite/delete them. The new installer was not published: draft upload process was stopped and exited with the expected interruption error. Read-only API confirmed draft v1.2.1 id410850281 with no assets; reuse that draft on authorized resumption, do not create a duplicate. Do not upload, publish, push further commits or resume this cloud stage without the user's later request. The public README was pushed with the upcoming 1.2.1 filename before the upload, so its latest-download link is pending the deferred release; do not claim it works yet. Older public 1.2.0 remains available through its immutable release URL.
+
+Local delivery is ready: Desktop/Plot Flow is installed/open on Statistics at 1.2.1, user data preserved, only Plot-Flow-1.2.1-Windows-x64-setup.exe remains in the Desktop installer folder. The two exact hash-verified old 1.1.0/1.2.0 Desktop installers were recycled and can be recovered. Source/build archives and all user databases/audio/settings are preserved. Do not repeat installation or reset data on publication resumption; users may have added new usage since the verified update.
+
 ## 1.2.1 built, installed and opened; publishing installer
 
 Installer completed successfully: 277765055 bytes, SHA256 c8960c7e32e0773280122c04e802e36373be7615ad65be989ce412fa9a82961d. Fresh isolated installation exit0 and focused model-checksum/native DLL-directory + System32-only loading passed. No redundant CPU/GPU/full-suite reruns after the user's request to expedite; native recognition implementation is unchanged.
